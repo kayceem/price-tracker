@@ -15,7 +15,6 @@ class ScriptDetailsSchema(BaseModel):
     close_price: float = Field(..., alias="Close Price*")
     total_listed_shares: Optional[int] = Field(..., alias="Total Listed Shares")
     total_paid_up_value: Optional[float] = Field(..., alias="Total Paid up Value")
-    market_capitalization: Optional[float] = Field(..., alias="Market Capitalization")
 
     @field_validator("total_listed_shares","last_traded_price", mode="after")
     def check_value(cls, value):
@@ -27,7 +26,7 @@ class ScriptDetailsSchema(BaseModel):
     def split_differences(cls, value):
         return float(value.split()[0].replace(',','')) if isinstance(value, str) else value
 
-    @field_validator("total_traded_quantity","total_trades","previous_day_close_price","open_price","close_price","total_listed_shares","total_paid_up_value", "market_capitalization", mode="before")
+    @field_validator("total_traded_quantity","total_trades","previous_day_close_price","open_price","close_price","total_listed_shares","total_paid_up_value", mode="before")
     def remove_commas(cls, value):
         return float(value.replace(",", "")) if isinstance(value, str) else value
 

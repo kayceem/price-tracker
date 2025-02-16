@@ -9,7 +9,7 @@ def get_dir_path() -> Path:
 
 def valid_day_time() ->  bool:
     now = datetime.datetime.now()
-    if now.weekday() in [6,0,1,2,3] and 11 <= now.hour < 15:
+    if now.weekday() in [6,0,1,2,3] and 9 <= now.hour < 15:
         return True
     return False
 

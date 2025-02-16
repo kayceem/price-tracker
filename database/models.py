@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String
 from .session import Base, engine
@@ -66,6 +67,8 @@ class Tracker(Base):
     user = relationship("User", back_populates="trackers")
     script = relationship("Scripts", back_populates="trackers")
 
-        
-Base.metadata.create_all(engine)
+async def create_tables():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
+asyncio.run(create_tables()) 

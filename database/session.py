@@ -1,18 +1,21 @@
-from sqlalchemy import create_engine
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 from contextlib import contextmanager
 from utils import get_dir_path
 
 DIR_PATH = get_dir_path()
-CONNECTION_URI = f'sqlite:///{DIR_PATH}/db.sqlite3'
-engine = create_engine(CONNECTION_URI, echo=False)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+CONNECTION_URI = f'sqlite+aiosqlite:///{DIR_PATH}/db.sqlite3'
+engine = create_async_engine(CONNECTION_URI, echo=False,
+    pool_size=50,
+    max_overflow=20,
+    pool_timeout=30,
+)
+SessionLocal = sessionmaker(autocommit=False,class_=AsyncSession, autoflush=False, bind=engine, expire_on_commit=False)
 Base = declarative_base()
 
-@contextmanager
-def get_db():
-    session=SessionLocal()
-    try:
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def get_db():
+    async with SessionLocal() as session:
         yield session
-    finally:
-        session.close()

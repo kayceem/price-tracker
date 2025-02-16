@@ -7,8 +7,8 @@ from nepse import get_script_ltp
 
 async def whatsapp_message_handler(message: dict):
     ticker = message['Body'].split()[0].upper()
-    with get_db() as db:
-        script = db.query(Scripts).filter(Scripts.ticker == ticker).first()
+    async with get_db() as db:
+        script = db.execute(Scripts).filter(Scripts.ticker == ticker).first()
         if not script:
             reply = f"Script with ticker {ticker} not found.\nPlease enter the valid stock ticker (e.g., AHPC):"
         else:

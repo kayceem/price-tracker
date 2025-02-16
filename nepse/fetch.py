@@ -9,7 +9,9 @@ async def fetch_script_details(href:str,script_id:int):
         page = await browser.new_page()
         await page.set_extra_http_headers({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"})
         await page.goto(url)
-        await page.wait_for_selector("table.table")
+        await page.locator("app-company-details").wait_for(state="attached")
+        await page.locator("app-company-details div").nth(3).wait_for(state="visible")
+        await page.get_by_role("cell", name="Instrument Type").wait_for(state="visible", timeout=10000)
         table = page.locator("table.table").nth(0)
         rows = await table.locator("tr").all()
         for row in rows:

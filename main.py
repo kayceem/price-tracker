@@ -14,7 +14,7 @@ import asyncio
 from apscheduler.schedulers.background import BackgroundScheduler
 import logging
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 load_dotenv()                   
 
@@ -25,12 +25,12 @@ def run_refresh():
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    scheduler.add_job(run_refresh, 'cron', minute='*/5', hour='8-15', day_of_week='0-6', max_instances=1)
+    scheduler.add_job(run_refresh, 'cron', minute='*/3', hour='11-15', day_of_week='0-6', max_instances=1)
     scheduler.start()
     await ptb.bot.setWebhook(os.getenv("WEBHOOK_URL"))
     async with ptb:
         await ptb.start()
-        ptb.job_queue.run_repeating(
+        ptb.job_queue.run_custom(
             manage_tracker_jobs,
             interval=300,
             first=1,
@@ -63,4 +63,4 @@ async def webhook_handler(request: Request):
     return Response(status_code=HTTPStatus.OK)  
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", port=8000)
+    uvicorn.run("main:app", host='0.0.0.0', port=8000)
