@@ -123,36 +123,19 @@ async def send_tracker_alert(tracker_id: int , chat_id: int):
             tracker.triggerd_at = datetime.datetime.now(nepal_tz)
         await db.commit()
 
-async def check_trackers(context: ContextTypes.DEFAULT_TYPE, user_id: int, chat_id: int):
-    if user_id in context.bot_data.get("paused_users", set()):
-        return
-        
+async def check_trackers(context: ContextTypes.DEFAULT_TYPE):
     async with get_db() as db:
-        trackers = (await db.execute(select(Tracker).join(User).filter(User.id == user_id).options(selectinload(Tracker.script)))).scalars().all()
-        tasks = []
-        for tracker in trackers:
-            last_alert_time = tracker.triggerd_at
-            if last_alert_time and not check_time_delta(last_alert_time, 300):
+        users = (await db.execute(select(User).join(Tracker).distinct().options(selectinload(User.trackers)))).scalars().all()
+        for user in users:
+            if user.id in context.bot_data.get("paused_users", set()):
                 continue
-            tasks.append(asyncio.create_task(send_tracker_alert(tracker.id, chat_id)))
+            tasks = []
+            for tracker in user.trackers:
+                last_alert_time = tracker.triggerd_at
+                if last_alert_time and not check_time_delta(last_alert_time, 300):
+                    continue
+                tasks.append(asyncio.create_task(send_tracker_alert(tracker.id, user.chat_id)))
 
-async def manage_tracker_jobs(context: ContextTypes.DEFAULT_TYPE):
-     async with get_db() as db:
-        users = (await db.execute(select(User).join(Tracker).distinct())).scalars().all()
-        if valid_day_time():
-            for user in users:
-                job_name = f"tracker_job_{user.id}"
-                if not context.job_queue.get_jobs_by_name(job_name):
-                    context.job_queue.run_repeating(
-                        partial(check_trackers, user_id=user.id, chat_id=user.chat_id), 
-                        interval=60,
-                        first=1,
-                        name=job_name,
-                    )
-        else:
-            for job in context.job_queue.jobs():
-                if job.name.startswith("tracker_job_"):
-                    job.schedule_removal()
  
 
 async def start(update, _: ContextTypes.DEFAULT_TYPE):

@@ -7,34 +7,47 @@ from  dotenv import load_dotenv
 
 from database.schemas import  WhatsAppMessageSchema
 
-from services import ptb, manage_tracker_jobs, whatsapp_message_handler, Update
+from services import ptb, whatsapp_message_handler, Update, check_trackers
 
-from nepse.script import  refresh_script_details
-import asyncio
-from apscheduler.schedulers.background import BackgroundScheduler
+from nepse import  refresh_script_details
+
 import logging
+import asyncio
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 load_dotenv()                   
 
-scheduler = BackgroundScheduler()
-
-def run_refresh():
-    asyncio.run(refresh_script_details())
+scheduler = AsyncIOScheduler()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    scheduler.add_job(run_refresh, 'cron', minute='*/3', hour='11-15', day_of_week='0-6', max_instances=1)
+    tracker_schedule = {
+            'trigger': 'cron',
+            'day_of_week': '0-6',
+            'hour': '11-18',
+            'minute': '*/10',
+            'max_instances': 1
+    }
+    refresh_script_schedule = {
+            'trigger': 'cron',
+            'day_of_week': '0-6',
+            'hour': '11-18',
+            'minute': '*/3',
+            'max_instances': 1
+    }
+        
+    scheduler.add_job(refresh_script_details, **refresh_script_schedule)
     scheduler.start()
     await ptb.bot.setWebhook(os.getenv("WEBHOOK_URL"))
     async with ptb:
         await ptb.start()
         ptb.job_queue.run_custom(
-            manage_tracker_jobs,
-            interval=300,
-            first=1,
-            name="market_hours_manager",
+            check_trackers,
+            name="tracker_checker",
+            job_kwargs=tracker_schedule
         )
         yield
         await ptb.stop()
