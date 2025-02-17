@@ -27,14 +27,14 @@ async def lifespan(_: FastAPI):
     tracker_schedule = {
             'trigger': 'cron',
             'day_of_week': '0-6',
-            'hour': '11-18',
+            'hour': '11-15',
             'minute': '*/10',
             'max_instances': 1
     }
     refresh_script_schedule = {
             'trigger': 'cron',
             'day_of_week': '0-6',
-            'hour': '11-18',
+            'hour': '11-15',
             'minute': '*/3',
             'max_instances': 1
     }
