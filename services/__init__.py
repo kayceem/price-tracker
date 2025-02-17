@@ -1,2 +1,2 @@
-from .telegram_bot import ptb, manage_tracker_jobs, Update
+from .telegram_bot import ptb, Update, check_trackers
 from .whatsapp import whatsapp_message_handler
