@@ -1,6 +1,10 @@
 
 import datetime
 from pathlib import Path
+import dotenv
+import os
+from cryptography.fernet import Fernet
+
 
 nepal_tz = datetime.timezone(datetime.timedelta(hours=5, minutes=45))
 
@@ -21,4 +25,17 @@ def check_time_delta(last_alert_time: datetime, delta: int) -> bool:
     if last_alert_time is None:
         return True
     return (datetime.datetime.now(nepal_tz) - last_alert_time.replace(tzinfo=nepal_tz)).seconds >= delta
-    
+
+def get_fernet_key():
+    dotenv.load_dotenv()
+    return bytes(os.getenv("MEROSHARE_KEY"), 'utf-8')    
+
+def encrypt_password(password: str) -> str:
+    fernet = Fernet(get_fernet_key())
+    encrypted_password = fernet.encrypt(password.encode())
+    return encrypted_password.decode()
+
+def decrypt_password(encrypted_password: str) -> str:
+    fernet = Fernet(get_fernet_key())
+    decrypted_password = fernet.decrypt(encrypted_password.encode())
+    return decrypted_password.decode()

@@ -2,7 +2,6 @@ import os
 from contextlib import asynccontextmanager
 from http import HTTPStatus
 from fastapi import FastAPI, Request, Response
-import uvicorn
 from  dotenv import load_dotenv
 
 from database.schemas import  WhatsAppMessageSchema
@@ -26,17 +25,19 @@ scheduler = AsyncIOScheduler()
 async def lifespan(_: FastAPI):
     tracker_schedule = {
             'trigger': 'cron',
-            'day_of_week': '0-6',
-            'hour': '11-15',
+            'day_of_week': '0-4',
+            'hour': '10-14',
             'minute': '*/10',
-            'max_instances': 1
+            'max_instances': 1,
+            'timezone': 'Asia/Kathmandu'
     }
     refresh_script_schedule = {
             'trigger': 'cron',
-            'day_of_week': '0-6',
-            'hour': '11-15',
+            'day_of_week': '0-4',
+            'hour': '10-14',
             'minute': '*/3',
-            'max_instances': 1
+            'max_instances': 1,
+            'timezone': 'Asia/Kathmandu'
     }
         
     scheduler.add_job(refresh_script_details, **refresh_script_schedule)
@@ -49,6 +50,9 @@ async def lifespan(_: FastAPI):
             name="tracker_checker",
             job_kwargs=tracker_schedule
         )
+        # for job in ptb.job_queue.jobs():
+            # print(f"Job {job.name} scheduled to run at {job.next_t}")
+
         yield
         await ptb.stop()
     scheduler.shutdown()
@@ -76,4 +80,5 @@ async def webhook_handler(request: Request):
     return Response(status_code=HTTPStatus.OK)  
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host='0.0.0.0', port=8000)
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

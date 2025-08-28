@@ -4,6 +4,7 @@ from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String
 from .session import Base, engine
 from sqlalchemy.orm import relationship
 from datetime import timezone, timedelta
+from utils import encrypt_password, decrypt_password
 
 nepal_tz = timezone(timedelta(hours=5, minutes=45))
 
@@ -40,7 +41,7 @@ class ScriptDetails(Base):
 
     script = relationship("Scripts", back_populates="script_details")
     def __repr__(self):
-        return f"<ScriptDetails(Script={self.script.script}, listing_date={self.listing_date}, last_traded_price={self.last_traded_price}, total_traded_quantity={self.total_traded_quantity}, total_trades={self.total_trades}, previous_day_close_price={self.previous_day_close_price}, high_price_low_price={self.high_price_low_price}, week_52_high_low={self.week_52_high_low}, open_price={self.open_price}, close_price={self.close_price}, total_listed_shares={self.total_listed_shares}, total_paid_up_value={self.total_paid_up_value}, market_capitalization={self.market_capitalization})>"
+        return f"<ScriptDetails(Script={self.script.ticker}, listing_date={self.listing_date}, last_traded_price={self.last_traded_price}, total_traded_quantity={self.total_traded_quantity}, total_trades={self.total_trades}, previous_day_close_price={self.previous_day_close_price}, high_price_low_price={self.high_price_low_price}, week_52_high_low={self.week_52_high_low}, open_price={self.open_price}, close_price={self.close_price}, total_listed_shares={self.total_listed_shares}, total_paid_up_value={self.total_paid_up_value}, market_capitalization={self.market_capitalization})>"
 
 class User(Base):
     __tablename__ = 'user'
@@ -51,6 +52,34 @@ class User(Base):
 
 
     trackers = relationship("Tracker", back_populates="user",  cascade="all, delete-orphan")
+
+class MeroShareUser(Base):
+    __tablename__ = 'meroshare-user'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    dp = Column(Integer, nullable=False)
+    username = Column(String(255), nullable=False)
+    _password = Column('password', String(255), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(), nullable=False)
+
+    def __init__(self, username, dp, password):
+        self.username = username
+        self.dp = dp
+        self.set_password(password)
+
+    def set_password(self, password: str):
+        self._password = encrypt_password(password)
+
+    def get_password(self):
+        return decrypt_password(self._password)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'dp': self.dp,
+            'username': self.username,
+            'created_at': self.created_at,
+            'password': self.get_password()
+            }
 
 class Tracker(Base):
     __tablename__ = 'tracker'
@@ -67,8 +96,8 @@ class Tracker(Base):
     user = relationship("User", back_populates="trackers")
     script = relationship("Scripts", back_populates="trackers")
 
-async def create_tables():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+# async def create_tables_if_not_exists():
+#         async with engine.begin() as conn:
+#             await conn.run_sync(lambda conn: Base.metadata.create_all(conn, checkfirst=True))
 
-asyncio.run(create_tables()) 
+# asyncio.run(create_tables_if_not_exists())

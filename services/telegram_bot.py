@@ -158,7 +158,7 @@ async def add_tracker(update, context: ContextTypes.DEFAULT_TYPE):
         user = (await db.execute(select(User).filter(User.chat_id == user_id))).scalars().first()
         if not user:
             user = User(chat_id=user_id, username=update.effective_user.first_name)
-            await db.add(user)
+            db.add(user)
             await db.commit()
     if "paused_users" not in context.bot_data:
         context.bot_data["paused_users"] = set()

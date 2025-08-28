@@ -1,15 +1,18 @@
 [project]
-name = "price-tracker"
+name = "jupyter-notebook-server"
 version = "0.1.0"
-description = "Add your description here"
+description = "Jupyter notebook server"
 readme = "README.md"
 requires-python = ">=3.12"
+
 dependencies = [
     "aiosqlite>=0.21.0",
     "alembic>=1.14.1",
     "apscheduler>=3.11.0",
     "bs4>=0.0.2",
+    "build>=1.2.2.post1",
     "certifi>=2025.1.31",
+    "cryptography>=44.0.3",
     "fastapi>=0.115.8",
     "ipykernel>=6.29.5",
     "jinja2>=3.1.5",
@@ -27,4 +30,14 @@ dependencies = [
     "twilio>=9.4.5",
     "urllib3==1.26.12",
     "uvicorn>=0.34.0",
+    "xlsx2pdf>=1.0.4",
+]
+
+[tool.setuptools]
+packages = [
+    "server",
+    "database",
+    "nepse",
+    "services",
+    "utils"
 ]
