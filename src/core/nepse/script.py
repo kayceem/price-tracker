@@ -2,15 +2,15 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from sqlalchemy import select
 
-from database import Scripts, get_db
-from database import ScriptDetails
-from database import Tracker
-from database import ScriptDetailsSchema
+from src.database import Scripts, get_db
+from src.database import ScriptDetails
+from src.database import Tracker
+from src.database import ScriptDetailsSchema
 from sqlalchemy.orm import selectinload
 
 from .fetch import fetch_script_details
 
-from utils import check_time_delta, valid_day_time
+from src.utils import check_time_delta, valid_day_time
 from sqlalchemy.orm import Session
 
 async def get_script_ltp(db : Session, script:Scripts):

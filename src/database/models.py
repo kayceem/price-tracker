@@ -4,7 +4,7 @@ from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String
 from .session import Base, engine
 from sqlalchemy.orm import relationship
 from datetime import timezone, timedelta
-from utils import encrypt_password, decrypt_password
+from src.utils import encrypt_password, decrypt_password
 
 nepal_tz = timezone(timedelta(hours=5, minutes=45))
 

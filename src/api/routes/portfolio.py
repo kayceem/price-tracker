@@ -4,16 +4,17 @@ Portfolio API Routes for FastAPI
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse, FileResponse
 from pathlib import Path
-from portfolio_analyzer import PortfolioAnalyzer
 import pandas as pd
 import math
 from typing import Dict, Optional
 
+from src.core.portfolio.analyzer import PortfolioAnalyzer
+from src.config.settings import config
+
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
-# Initialize analyzer (use your username)
-USERNAME = "3522757"
-analyzer = PortfolioAnalyzer(USERNAME)
+# Initialize analyzer
+analyzer = PortfolioAnalyzer(config.username)
 
 # Load current prices and wacc data from Wacc Rates
 def get_current_prices() -> Dict[str, float]:

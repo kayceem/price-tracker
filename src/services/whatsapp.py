@@ -1,8 +1,8 @@
 
 import os
-from database import Scripts
-from database import get_db
-from nepse import get_script_ltp
+from src.database import Scripts
+from src.database import get_db
+from src.core.nepse import get_script_ltp
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from twilio.rest import Client

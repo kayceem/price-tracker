@@ -13,12 +13,12 @@ from telegram.ext import Application, CommandHandler, ConversationHandler, Messa
 from telegram.ext._contexttypes import ContextTypes
 from telegram.constants import ChatAction
 
-from database import User, get_db
-from database import Scripts, Tracker
+from src.database import User, get_db
+from src.database import Scripts, Tracker
 
-from nepse import get_script_ltp
+from src.core.nepse import get_script_ltp
 
-from utils import check_time_delta, is_price_in_range, valid_day_time, nepal_tz
+from src.utils import check_time_delta, is_price_in_range, valid_day_time, nepal_tz
 import logging
 
 load_dotenv()
