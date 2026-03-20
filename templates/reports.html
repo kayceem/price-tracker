@@ -1,0 +1,284 @@
+{% extends "base.html" %}
+
+{% block title %}Reports & Export - Portfolio Viewer{% endblock %}
+{% block page_title %}Reports & Export{% endblock %}
+
+{% block content %}
+<div x-data="reportsData()" x-init="init()">
+    <!-- Available Reports -->
+    <div class="grid grid-cols-2 gap-6 mb-8">
+        <!-- Portfolio Summary Report -->
+        <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition">
+            <div class="flex items-start justify-between mb-4">
+                <div>
+                    <h3 class="text-xl font-semibold text-gray-800 mb-2">Portfolio Summary</h3>
+                    <p class="text-sm text-gray-600">Complete overview of all scripts with realized and unrealized P&L, interest costs, and returns</p>
+                </div>
+                <div class="bg-blue-100 rounded-lg p-3">
+                    <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                    </svg>
+                </div>
+            </div>
+            <div class="space-y-2 mb-4">
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-600">Total Scripts:</span>
+                    <span class="font-semibold" x-text="stats.total_scripts || '-'"></span>
+                </div>
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-600">Format:</span>
+                    <span class="font-semibold">CSV</span>
+                </div>
+            </div>
+            <div class="flex space-x-2">
+                <button @click="downloadReport('summary')" class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+                    Download CSV
+                </button>
+                <button @click="viewReport('summary')" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition">
+                    View Online
+                </button>
+            </div>
+        </div>
+
+        <!-- Transaction History Report -->
+        <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition">
+            <div class="flex items-start justify-between mb-4">
+                <div>
+                    <h3 class="text-xl font-semibold text-gray-800 mb-2">Transaction History</h3>
+                    <p class="text-sm text-gray-600">Chronological list of all transactions including buys, sells, IPOs, bonus shares, and rights</p>
+                </div>
+                <div class="bg-green-100 rounded-lg p-3">
+                    <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+                    </svg>
+                </div>
+            </div>
+            <div class="space-y-2 mb-4">
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-600">Total Transactions:</span>
+                    <span class="font-semibold" x-text="stats.total_transactions || '-'"></span>
+                </div>
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-600">Format:</span>
+                    <span class="font-semibold">CSV</span>
+                </div>
+            </div>
+            <div class="flex space-x-2">
+                <button @click="downloadReport('transactions')" class="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">
+                    Download CSV
+                </button>
+                <button @click="viewReport('transactions')" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition">
+                    View Online
+                </button>
+            </div>
+        </div>
+
+        <!-- Current Holdings Report -->
+        <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition">
+            <div class="flex items-start justify-between mb-4">
+                <div>
+                    <h3 class="text-xl font-semibold text-gray-800 mb-2">Current Holdings</h3>
+                    <p class="text-sm text-gray-600">Detailed view of all current holdings with average cost, current value, and unrealized P&L</p>
+                </div>
+                <div class="bg-purple-100 rounded-lg p-3">
+                    <svg class="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+                    </svg>
+                </div>
+            </div>
+            <div class="space-y-2 mb-4">
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-600">Scripts with Holdings:</span>
+                    <span class="font-semibold" x-text="stats.scripts_with_holdings || '-'"></span>
+                </div>
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-600">Format:</span>
+                    <span class="font-semibold">CSV</span>
+                </div>
+            </div>
+            <div class="flex space-x-2">
+                <button @click="downloadReport('holdings')" class="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition">
+                    Download CSV
+                </button>
+                <button @click="viewReport('holdings')" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition">
+                    View Online
+                </button>
+            </div>
+        </div>
+
+        <!-- Detailed Lots Report -->
+        <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition">
+            <div class="flex items-start justify-between mb-4">
+                <div>
+                    <h3 class="text-xl font-semibold text-gray-800 mb-2">Detailed Lots (FIFO)</h3>
+                    <p class="text-sm text-gray-600">Lot-level breakdown showing each individual purchase lot with FIFO ordering and interest costs</p>
+                </div>
+                <div class="bg-orange-100 rounded-lg p-3">
+                    <svg class="w-8 h-8 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
+                    </svg>
+                </div>
+            </div>
+            <div class="space-y-2 mb-4">
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-600">Total Lots:</span>
+                    <span class="font-semibold" x-text="stats.total_lots || '-'"></span>
+                </div>
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-600">Format:</span>
+                    <span class="font-semibold">CSV</span>
+                </div>
+            </div>
+            <div class="flex space-x-2">
+                <button @click="downloadReport('lots')" class="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition">
+                    Download CSV
+                </button>
+                <button @click="viewReport('lots')" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition">
+                    View Online
+                </button>
+            </div>
+        </div>
+
+        <!-- Interest Analysis Report -->
+        <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition">
+            <div class="flex items-start justify-between mb-4">
+                <div>
+                    <h3 class="text-xl font-semibold text-gray-800 mb-2">Interest Analysis</h3>
+                    <p class="text-sm text-gray-600">Opportunity cost breakdown showing interest calculations for each holding at 24 percent rate</p>
+                </div>
+                <div class="bg-yellow-100 rounded-lg p-3">
+                    <svg class="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                </div>
+            </div>
+            <div class="space-y-2 mb-4">
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-600">Interest Rate:</span>
+                    <span class="font-semibold">24 percent</span>
+                </div>
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-600">Format:</span>
+                    <span class="font-semibold">CSV</span>
+                </div>
+            </div>
+            <div class="flex space-x-2">
+                <button @click="downloadReport('interest')" class="flex-1 px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition">
+                    Download CSV
+                </button>
+                <button @click="viewReport('interest')" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition">
+                    View Online
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Download All -->
+    <div class="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg shadow-lg p-8 text-center text-white mb-8">
+        <h3 class="text-2xl font-bold mb-3">Download All Reports</h3>
+        <p class="mb-6">Get all five reports in a single download</p>
+        <button @click="downloadAll()" class="px-8 py-3 bg-white text-blue-600 rounded-lg hover:bg-gray-100 transition font-semibold text-lg">
+            Download All Reports
+        </button>
+    </div>
+
+    <!-- Report Statistics -->
+    <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+        <h3 class="text-xl font-semibold text-gray-800 mb-6">Report Statistics</h3>
+        <div class="grid grid-cols-4 gap-6">
+            <div>
+                <p class="text-sm text-gray-500 mb-1">Total Scripts</p>
+                <p class="text-3xl font-bold text-gray-800" x-text="stats.total_scripts || '-'"></p>
+            </div>
+            <div>
+                <p class="text-sm text-gray-500 mb-1">Total Transactions</p>
+                <p class="text-3xl font-bold text-gray-800" x-text="stats.total_transactions || '-'"></p>
+            </div>
+            <div>
+                <p class="text-sm text-gray-500 mb-1">Current Holdings</p>
+                <p class="text-3xl font-bold text-gray-800" x-text="stats.scripts_with_holdings || '-'"></p>
+            </div>
+            <div>
+                <p class="text-sm text-gray-500 mb-1">Total Lots</p>
+                <p class="text-3xl font-bold text-gray-800" x-text="stats.total_lots || '-'"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Report Information -->
+    <div class="bg-gray-50 rounded-lg p-6">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">Report Information</h3>
+        <div class="space-y-3 text-sm text-gray-700">
+            <div class="flex items-start">
+                <span class="font-semibold mr-2 mt-1">CSV Format:</span>
+                <span>All reports are exported in CSV (Comma Separated Values) format, compatible with Excel, Google Sheets, and other spreadsheet applications.</span>
+            </div>
+            <div class="flex items-start">
+                <span class="font-semibold mr-2 mt-1">Data Currency:</span>
+                <span>Reports are generated in real-time based on your current portfolio data and latest prices from Wacc Rates CSV.</span>
+            </div>
+            <div class="flex items-start">
+                <span class="font-semibold mr-2 mt-1">Interest Rate:</span>
+                <span>Interest calculations use a 24 percent annual rate as configured in your environment settings.</span>
+            </div>
+            <div class="flex items-start">
+                <span class="font-semibold mr-2 mt-1">FIFO Method:</span>
+                <span>All P&L calculations use the First In, First Out (FIFO) method for lot tracking and sell order determination.</span>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    function reportsData() {
+        return {
+            stats: {},
+
+            async init() {
+                await this.loadStats();
+            },
+
+            async loadStats() {
+                try {
+                    const [statsResponse, lotsResponse] = await Promise.all([
+                        fetch('/api/portfolio/stats'),
+                        fetch('/api/portfolio/lots')
+                    ]);
+
+                    this.stats = await statsResponse.json();
+                    const lotsData = await lotsResponse.json();
+                    this.stats.total_lots = lotsData.count;
+                } catch (error) {
+                    console.error('Error loading stats:', error);
+                }
+            },
+
+            downloadReport(type) {
+                window.location.href = `/api/portfolio/export/${type}`;
+            },
+
+            viewReport(type) {
+                const routes = {
+                    'summary': '/portfolio',
+                    'transactions': '/portfolio/transactions',
+                    'holdings': '/portfolio/holdings',
+                    'lots': '/portfolio/lots',
+                    'interest': '/portfolio/interest'
+                };
+                window.location.href = routes[type] || '/portfolio';
+            },
+
+            downloadAll() {
+                const reports = ['summary', 'transactions', 'holdings', 'lots', 'interest'];
+                reports.forEach((report, index) => {
+                    setTimeout(() => {
+                        this.downloadReport(report);
+                    }, index * 500); // Stagger downloads
+                });
+            }
+        }
+    }
+</script>
+{% endblock %}

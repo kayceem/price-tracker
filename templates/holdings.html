@@ -1,0 +1,305 @@
+{% extends "base.html" %}
+
+{% block title %}Current Holdings - Portfolio Viewer{% endblock %}
+{% block page_title %}Current Holdings{% endblock %}
+
+{% block content %}
+<div x-data="holdingsData()" x-init="init()">
+    <!-- Loading State -->
+    <div x-show="loading" class="flex justify-center items-center h-96">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <!-- Content -->
+    <div x-show="!loading" x-cloak>
+        <!-- Summary Stats -->
+        <div class="grid grid-cols-3 gap-6 mb-8">
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <p class="text-sm font-medium text-gray-500 mb-2">Total Scripts Held</p>
+                <p class="text-3xl font-bold text-gray-800" x-text="holdings.length"></p>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <p class="text-sm font-medium text-gray-500 mb-2">Total Holding Value</p>
+                <p class="text-3xl font-bold text-gray-800" x-text="formatCurrency(totalValue)"></p>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <p class="text-sm font-medium text-gray-500 mb-2">Unrealized Profit/Loss</p>
+                <p class="text-3xl font-bold" :class="pnlClass(totalUnrealizedPnl)" x-text="formatCurrency(totalUnrealizedPnl)"></p>
+            </div>
+        </div>
+
+        <!-- Holding Distribution -->
+        <div class="grid grid-cols-2 gap-6 mt-8">
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Holdings by Value</h3>
+                <div class="h-96">
+                    <canvas id="valueChart"></canvas>
+                </div>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Holdings by P&L Performance</h3>
+                <div class="h-96">
+                    <canvas id="pnlChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Holdings Table -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <div class="mb-6">
+                <h3 class="text-xl font-semibold text-gray-800 mb-4">All Holdings</h3>
+                <div class="flex items-center justify-between">
+                    <div class="text-sm text-gray-600">
+                        Click on any row to view detailed information about that script
+                    </div>
+                    <div class="flex space-x-4">
+                        <button @click="exportToCSV()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+                            Export to CSV
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table id="holdingsTable" class="display" style="width:100%">
+                    <thead>
+                        <tr>
+                            <th>Scrip</th>
+                            <th>Quantity</th>
+                            <th>Avg Cost</th>
+                            <th>Total Cost</th>
+                            <th>Current Price</th>
+                            <th>Current Value</th>
+                            <th>Unrealized P&L</th>
+                            <th>P&L Percent</th>
+                            <th>Avg Days Held</th>
+                            <th>Interest Cost</th>
+                            <th>Net P&L</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="holding in holdings" :key="holding.Scrip">
+                            <tr @click="viewScript(holding.Scrip)" class="cursor-pointer hover:bg-gray-50">
+                                <td><span class="font-semibold text-blue-600" x-text="holding.Scrip"></span></td>
+                                <td class="number-cell" x-text="formatNumber(holding.Quantity)"></td>
+                                <td class="number-cell" x-text="formatCurrency(holding['Avg Cost'])"></td>
+                                <td class="number-cell" x-text="formatCurrency(holding['Total Cost'])"></td>
+                                <td class="number-cell" x-text="holding['Current Price'] ? formatCurrency(holding['Current Price']) : 'N/A'"></td>
+                                <td class="number-cell" x-text="holding['Current Value'] ? formatCurrency(holding['Current Value']) : 'N/A'"></td>
+                                <td class="number-cell" :class="pnlClass(holding['Unrealized P&L'])" x-text="holding['Unrealized P&L'] !== null ? formatCurrency(holding['Unrealized P&L']) : 'N/A'"></td>
+                                <td class="number-cell" :class="pnlClass(holding['Unrealized P&L %'])" x-text="holding['Unrealized P&L %'] !== null ? formatPercent(holding['Unrealized P&L %']) : 'N/A'"></td>
+                                <td class="number-cell" x-text="formatNumber(holding['Avg Days Held']) + ' days'"></td>
+                                <td class="number-cell text-orange-600" x-text="formatCurrency(holding['Interest Cost'])"></td>
+                                <td class="number-cell" :class="pnlClass(holding['Unrealized P&L'] - holding['Interest Cost'])" x-text="formatCurrency((holding['Unrealized P&L'] || 0) - (holding['Interest Cost'] || 0))"></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                    <tfoot>
+                        <tr class="font-bold bg-gray-50">
+                            <td>TOTAL</td>
+                            <td class="number-cell" x-text="formatNumber(totalQuantity)"></td>
+                            <td></td>
+                            <td class="number-cell" x-text="formatCurrency(totalCost)"></td>
+                            <td></td>
+                            <td class="number-cell" x-text="formatCurrency(totalValue)"></td>
+                            <td class="number-cell" :class="pnlClass(totalUnrealizedPnl)" x-text="formatCurrency(totalUnrealizedPnl)"></td>
+                            <td class="number-cell" :class="pnlClass(totalUnrealizedPnlPct)" x-text="formatPercent(totalUnrealizedPnlPct)"></td>
+                            <td></td>
+                            <td class="number-cell text-orange-600" x-text="formatCurrency(totalInterest)"></td>
+                            <td class="number-cell" :class="pnlClass(totalUnrealizedPnl - totalInterest)" x-text="formatCurrency(totalUnrealizedPnl - totalInterest)"></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+
+        
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    function holdingsData() {
+        return {
+            loading: true,
+            holdings: [],
+            dataTable: null,
+            valueChart: null,
+            pnlChart: null,
+
+            get totalQuantity() {
+                return this.holdings.reduce((sum, h) => sum + (h.Quantity || 0), 0);
+            },
+            get totalCost() {
+                return this.holdings.reduce((sum, h) => sum + (h['Total Cost'] || 0), 0);
+            },
+            get totalValue() {
+                return this.holdings.reduce((sum, h) => sum + (h['Current Value'] || 0), 0);
+            },
+            get totalUnrealizedPnl() {
+                return this.holdings.reduce((sum, h) => sum + (h['Unrealized P&L'] || 0), 0);
+            },
+            get totalUnrealizedPnlPct() {
+                return this.totalCost > 0 ? (this.totalUnrealizedPnl / this.totalCost * 100) : 0;
+            },
+            get totalInterest() {
+                return this.holdings.reduce((sum, h) => sum + (h['Interest Cost'] || 0), 0);
+            },
+
+            async init() {
+                await this.loadData();
+                this.$nextTick(() => {
+                    setTimeout(() => {
+                        this.initDataTable();
+                        this.createCharts();
+                    }, 100);
+                });
+            },
+
+            async loadData() {
+                try {
+                    const response = await fetch('/api/portfolio/holdings');
+                    const data = await response.json();
+                    this.holdings = data.holdings;
+                    this.loading = false;
+                } catch (error) {
+                    console.error('Error loading holdings:', error);
+                    this.loading = false;
+                }
+            },
+
+            initDataTable() {
+                if (this.dataTable) {
+                    this.dataTable.destroy();
+                }
+
+                this.dataTable = jQuery('#holdingsTable').DataTable({
+                    pageLength: 25,
+                    order: [[5, 'desc']], // Sort by Current Value
+                    columnDefs: [
+                        {
+                            targets: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+                            className: 'number-cell',
+                            type: 'num',
+                            render: function(data, type, row) {
+                                if (type === 'sort' || type === 'type') {
+                                    // Remove currency symbols, commas, and percentages for sorting
+                                    if (typeof data === 'string') {
+                                        return parseFloat(data.replace(/[Rs.,\s%]/g, '')) || 0;
+                                    }
+                                    return parseFloat(data) || 0;
+                                }
+                                return data;
+                            }
+                        }
+                    ],
+                    footerCallback: function() {
+                        // Footer is handled by Alpine.js
+                    }
+                });
+            },
+
+            createCharts() {
+                // Value Chart
+                const topByValue = [...this.holdings]
+                    .sort((a, b) => (b['Current Value'] || 0) - (a['Current Value'] || 0))
+                    .slice(0, 10);
+
+                const valueCtx = document.getElementById('valueChart').getContext('2d');
+                this.valueChart = new Chart(valueCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: topByValue.map(h => h.Scrip),
+                        datasets: [{
+                            label: 'Current Value',
+                            data: topByValue.map(h => h['Current Value'] || 0),
+                            backgroundColor: '#3B82F6'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return 'Rs. ' + context.parsed.y.toLocaleString('en-NP');
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    callback: function(value) {
+                                        return 'Rs. ' + (value / 1000).toFixed(0) + 'K';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+
+                // P&L Chart
+                const byPnl = [...this.holdings]
+                    .filter(h => h['Unrealized P&L'] !== null)
+                    .sort((a, b) => Math.abs(b['Unrealized P&L']) - Math.abs(a['Unrealized P&L']))
+                    .slice(0, 10);
+
+                const pnlCtx = document.getElementById('pnlChart').getContext('2d');
+                this.pnlChart = new Chart(pnlCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: byPnl.map(h => h.Scrip),
+                        datasets: [{
+                            label: 'Unrealized P&L',
+                            data: byPnl.map(h => h['Unrealized P&L']),
+                            backgroundColor: byPnl.map(h => h['Unrealized P&L'] >= 0 ? '#10B981' : '#EF4444')
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        indexAxis: 'y',
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return 'Rs. ' + context.parsed.x.toLocaleString('en-NP');
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                ticks: {
+                                    callback: function(value) {
+                                        return 'Rs. ' + (value / 1000).toFixed(0) + 'K';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            },
+
+            viewScript(symbol) {
+                window.location.href = `/portfolio/script/${symbol}`;
+            },
+
+            exportToCSV() {
+                window.location.href = '/api/portfolio/export/holdings';
+            },
+
+            formatCurrency,
+            formatPercent,
+            formatNumber,
+            pnlClass
+        }
+    }
+</script>
+{% endblock %}

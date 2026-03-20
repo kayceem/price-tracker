@@ -1,0 +1,420 @@
+{% extends "base.html" %}
+
+{% block title %}Transaction History - Portfolio Viewer{% endblock %}
+{% block page_title %}Transaction History{% endblock %}
+
+{% block content %}
+<div x-data="transactionsData()" x-init="init()">
+    <!-- Loading State -->
+    <div x-show="loading" class="flex justify-center items-center h-96">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <!-- Content -->
+    <div x-show="!loading" x-cloak>
+        <!-- Summary Stats -->
+        <div class="grid grid-cols-5 gap-6 mb-8">
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <p class="text-sm font-medium text-gray-500 mb-2">Total Transactions</p>
+                <p class="text-3xl font-bold text-gray-800" x-text="transactions.length"></p>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <p class="text-sm font-medium text-gray-500 mb-2">BUY</p>
+                <p class="text-3xl font-bold text-blue-600" x-text="typeCount.BUY || 0"></p>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <p class="text-sm font-medium text-gray-500 mb-2">SELL</p>
+                <p class="text-3xl font-bold text-orange-600" x-text="typeCount.SELL || 0"></p>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <p class="text-sm font-medium text-gray-500 mb-2">IPO</p>
+                <p class="text-3xl font-bold text-green-600" x-text="typeCount.IPO || 0"></p>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <p class="text-sm font-medium text-gray-500 mb-2">BONUS + RIGHTS</p>
+                <p class="text-3xl font-bold text-purple-600" x-text="(typeCount.BONUS || 0) + (typeCount.RIGHTS || 0)"></p>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">Filters</h3>
+            <div class="grid grid-cols-4 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Scrip</label>
+                    <input type="text" x-model="filters.scrip" @input="applyFilters()" placeholder="Search by scrip..." class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Transaction Type</label>
+                    <select x-model="filters.type" @change="applyFilters()" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <option value="">All Types</option>
+                        <option value="BUY">BUY</option>
+                        <option value="SELL">SELL</option>
+                        <option value="IPO">IPO</option>
+                        <option value="BONUS">BONUS</option>
+                        <option value="RIGHTS">RIGHTS</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">From Date</label>
+                    <input type="date" x-model="filters.fromDate" @change="applyFilters()" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">To Date</label>
+                    <input type="date" x-model="filters.toDate" @change="applyFilters()" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+            </div>
+            <div class="mt-4 flex space-x-4">
+                <button @click="resetFilters()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition">
+                    Reset Filters
+                </button>
+                <button @click="exportToCSV()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+                    Export Filtered Data
+                </button>
+            </div>
+        </div>
+
+        <!-- Timeline Visualization -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">Transaction Timeline</h3>
+            <div class="h-64">
+                <canvas id="timelineChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Transactions Table -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h3 class="text-xl font-semibold text-gray-800 mb-4">All Transactions</h3>
+            <div class="text-sm text-gray-600 mb-4">
+                Showing <span class="font-semibold" x-text="filteredTransactions.length"></span> transactions
+            </div>
+
+            <div class="overflow-x-auto">
+                <table id="transactionsTable" class="display" style="width:100%">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Scrip</th>
+                            <th>Type</th>
+                            <th>Quantity</th>
+                            <th>Price</th>
+                            <th>Amount</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Transaction Summary by Type -->
+        <div class="grid grid-cols-2 gap-6 mt-8">
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Transaction Volume by Type</h3>
+                <div class="h-80">
+                    <canvas id="typeChart"></canvas>
+                </div>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Monthly Transaction Count</h3>
+                <div class="h-80">
+                    <canvas id="monthlyChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    function transactionsData() {
+        return {
+            loading: true,
+            transactions: [],
+            filteredTransactions: [],
+            filters: {
+                scrip: '',
+                type: '',
+                fromDate: '',
+                toDate: ''
+            },
+            typeCount: {},
+            dataTable: null,
+            timelineChart: null,
+            typeChart: null,
+            monthlyChart: null,
+
+            async init() {
+                await this.loadData();
+                this.applyFilters();
+                this.$nextTick(() => {
+                    setTimeout(() => {
+                        this.createCharts();
+                    }, 100);
+                });
+            },
+
+            async loadData() {
+                try {
+                    const response = await fetch('/api/portfolio/transactions');
+                    const data = await response.json();
+                    this.transactions = data.transactions;
+                    this.filteredTransactions = this.transactions;
+                    this.calculateTypeCount();
+                    this.loading = false;
+                } catch (error) {
+                    console.error('Error loading transactions:', error);
+                    this.loading = false;
+                }
+            },
+
+            calculateTypeCount() {
+                this.typeCount = {};
+                this.transactions.forEach(trans => {
+                    this.typeCount[trans.Type] = (this.typeCount[trans.Type] || 0) + 1;
+                });
+            },
+
+            applyFilters() {
+                this.filteredTransactions = this.transactions.filter(trans => {
+                    if (this.filters.scrip && !trans.Scrip.toLowerCase().includes(this.filters.scrip.toLowerCase())) {
+                        return false;
+                    }
+                    if (this.filters.type && trans.Type !== this.filters.type) {
+                        return false;
+                    }
+                    if (this.filters.fromDate && trans.Date < this.filters.fromDate) {
+                        return false;
+                    }
+                    if (this.filters.toDate && trans.Date > this.filters.toDate) {
+                        return false;
+                    }
+                    return true;
+                });
+
+                if (this.dataTable) {
+                    this.dataTable.clear();
+                    this.dataTable.rows.add(this.filteredTransactions);
+                    this.dataTable.draw();
+                } else {
+                    this.$nextTick(() => {
+                        this.initDataTable();
+                    });
+                }
+            },
+
+            resetFilters() {
+                this.filters = {
+                    scrip: '',
+                    type: '',
+                    fromDate: '',
+                    toDate: ''
+                };
+                this.applyFilters();
+            },
+
+            initDataTable() {
+                if (this.dataTable) {
+                    return;
+                }
+
+                const self = this;
+                this.dataTable = jQuery('#transactionsTable').DataTable({
+                    data: this.filteredTransactions,
+                    pageLength: 25,
+                    order: [[0, 'desc']], // Sort by Date descending
+                    columns: [
+                        {
+                            data: 'Date',
+                            render: function(data, type, row) {
+                                if (type === 'sort' || type === 'type') {
+                                    // Return timestamp for proper sorting
+                                    return new Date(data).getTime();
+                                }
+                                // Return formatted date for display
+                                const date = new Date(data);
+                                return date.toLocaleDateString('en-NP', { year: 'numeric', month: 'short', day: '2-digit' });
+                            }
+                        },
+                        {
+                            data: 'Scrip',
+                            render: function(data, type, row) {
+                                return '<span class="font-semibold text-blue-600 cursor-pointer">' + data + '</span>';
+                            }
+                        },
+                        {
+                            data: 'Type',
+                            render: function(data) {
+                                return '<span class="badge badge-' + data.toLowerCase() + '">' + data + '</span>';
+                            }
+                        },
+                        {
+                            data: 'Quantity',
+                            type: 'num',
+                            className: 'number-cell',
+                            render: function(data, type, row) {
+                                if (type === 'sort' || type === 'type') {
+                                    return parseFloat(data) || 0;
+                                }
+                                return data.toLocaleString('en-NP');
+                            }
+                        },
+                        {
+                            data: 'Price',
+                            type: 'num',
+                            className: 'number-cell',
+                            render: function(data, type, row) {
+                                if (type === 'sort' || type === 'type') {
+                                    return parseFloat(data) || 0;
+                                }
+                                return 'Rs. ' + data.toLocaleString('en-NP', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                            }
+                        },
+                        {
+                            data: 'Amount',
+                            type: 'num',
+                            className: 'number-cell',
+                            render: function(data, type, row) {
+                                if (type === 'sort' || type === 'type') {
+                                    return parseFloat(data) || 0;
+                                }
+                                const className = row.Type === 'SELL' ? 'profit' : 'neutral';
+                                return '<span class="' + className + '">Rs. ' + data.toLocaleString('en-NP', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + '</span>';
+                            }
+                        },
+                        {
+                            data: 'Description',
+                            render: function(data) {
+                                return '<span class="text-sm text-gray-500">' + data + '</span>';
+                            }
+                        }
+                    ]
+                });
+
+                // Add click handler for scrip column
+                jQuery('#transactionsTable tbody').on('click', 'td:nth-child(2)', function() {
+                    const data = self.dataTable.row(this).data();
+                    if (data) {
+                        self.viewScript(data.Scrip);
+                    }
+                });
+            },
+
+            createCharts() {
+                // Timeline Chart
+                const transactionsByMonth = this.groupByMonth(this.transactions);
+                const timelineCtx = document.getElementById('timelineChart').getContext('2d');
+                this.timelineChart = new Chart(timelineCtx, {
+                    type: 'line',
+                    data: {
+                        labels: Object.keys(transactionsByMonth),
+                        datasets: [{
+                            label: 'Transactions',
+                            data: Object.values(transactionsByMonth),
+                            borderColor: '#3B82F6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            fill: true,
+                            tension: 0.4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    stepSize: 1
+                                }
+                            }
+                        }
+                    }
+                });
+
+                // Type Chart
+                const typeCtx = document.getElementById('typeChart').getContext('2d');
+                this.typeChart = new Chart(typeCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: Object.keys(this.typeCount),
+                        datasets: [{
+                            data: Object.values(this.typeCount),
+                            backgroundColor: ['#3B82F6', '#F59E0B', '#10B981', '#8B5CF6', '#EC4899']
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'right'
+                            }
+                        }
+                    }
+                });
+
+                // Monthly Chart
+                const monthlyData = this.groupByMonth(this.transactions);
+                const monthlyCtx = document.getElementById('monthlyChart').getContext('2d');
+                this.monthlyChart = new Chart(monthlyCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: Object.keys(monthlyData).slice(-12), // Last 12 months
+                        datasets: [{
+                            label: 'Transactions',
+                            data: Object.values(monthlyData).slice(-12),
+                            backgroundColor: '#3B82F6'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    stepSize: 1
+                                }
+                            }
+                        }
+                    }
+                });
+            },
+
+            groupByMonth(transactions) {
+                const grouped = {};
+                transactions.forEach(trans => {
+                    const date = new Date(trans.Date);
+                    const key = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0');
+                    grouped[key] = (grouped[key] || 0) + 1;
+                });
+                return grouped;
+            },
+
+            formatDate(dateStr) {
+                const date = new Date(dateStr);
+                return date.toLocaleDateString('en-NP', { year: 'numeric', month: 'short', day: '2-digit' });
+            },
+
+            viewScript(symbol) {
+                window.location.href = `/portfolio/script/${symbol}`;
+            },
+
+            exportToCSV() {
+                window.location.href = '/api/portfolio/export/transactions';
+            },
+
+            formatCurrency,
+            formatNumber
+        }
+    }
+</script>
+{% endblock %}

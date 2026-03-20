@@ -1,0 +1,428 @@
+{% extends "base.html" %}
+
+{% block title %}Interest Analysis - Portfolio Viewer{% endblock %}
+{% block page_title %}Interest Cost Analysis{% endblock %}
+
+{% block content %}
+<div x-data="interestData()" x-init="init()">
+    <!-- Loading State -->
+    <div x-show="loading" class="flex justify-center items-center h-96">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <!-- Content -->
+    <div x-show="!loading" x-cloak>
+
+        <!-- Summary Cards -->
+        <div class="grid grid-cols-3 gap-6 mb-8">
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <p class="text-sm font-medium text-gray-500 mb-2">Total Interest Cost</p>
+                <p class="text-4xl font-bold text-orange-600" x-text="formatCurrency(totalInterest)"></p>
+                <p class="text-sm text-gray-600 mt-2">At 24 percent annual rate</p>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <p class="text-sm font-medium text-gray-500 mb-2">Total Investment</p>
+                <p class="text-4xl font-bold text-gray-800" x-text="formatCurrency(totalInvestment)"></p>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <p class="text-sm font-medium text-gray-500 mb-2">Interest as Percentage of Investment</p>
+                <p class="text-4xl font-bold text-orange-600" x-text="formatPercent(avgInterestPct)"></p>
+                <p class="text-sm text-gray-600 mt-2">Average across all holdings</p>
+            </div>
+        </div>
+
+        <!-- What-If Calculator -->
+        <div class="bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg shadow-md p-6 mb-8">
+            <h3 class="text-xl font-semibold text-gray-800 mb-4">What-If Interest Rate Calculator</h3>
+            <div class="grid grid-cols-3 gap-6">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Change Interest Rate</label>
+                    <div class="flex items-center space-x-2">
+                        <input type="number" x-model.number="whatIfRate" @input="calculateWhatIf()"
+                               min="0" max="100" step="0.5"
+                               class="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <span class="text-lg font-semibold">percent</span>
+                    </div>
+                    <p class="text-xs text-gray-600 mt-1">Current: 24 percent</p>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-gray-700 mb-2">New Total Interest Cost</p>
+                    <p class="text-3xl font-bold text-purple-600" x-text="formatCurrency(whatIfInterest)"></p>
+                    <p class="text-sm" :class="whatIfInterest < totalInterest ? 'text-green-600' : 'text-red-600'"
+                       x-text="formatCurrency(whatIfInterest - totalInterest)"></p>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-gray-700 mb-2">Impact on Net P&L</p>
+                    <p class="text-3xl font-bold text-purple-600" x-text="formatCurrency(whatIfNetPnl)"></p>
+                    <p class="text-sm" :class="whatIfNetPnl > currentNetPnl ? 'text-green-600' : 'text-red-600'"
+                       x-text="formatCurrency(whatIfNetPnl - currentNetPnl)"></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Top Interest Cost Scripts -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <h3 class="text-xl font-semibold text-gray-800 mb-6">Interest Cost by Script (Top 20)</h3>
+            <div class="h-[600px]">
+                <canvas id="interestChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Investment Duration Distribution -->
+        <div class="grid grid-cols-2 gap-6 mb-8">
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Investment by Hold Duration</h3>
+                <div class="h-80">
+                    <canvas id="durationChart"></canvas>
+                </div>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Interest Cost vs Investment Amount</h3>
+                <div class="h-80">
+                    <canvas id="scatterChart"></canvas>
+                </div>
+                <p class="text-sm text-gray-600 mt-4">
+                    Each dot represents a script. Position shows investment amount (x-axis) vs interest cost (y-axis).
+                </p>
+            </div>
+        </div>
+
+        <!-- Detailed Table -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-xl font-semibold text-gray-800">Detailed Interest Analysis</h3>
+                <button @click="exportToCSV()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+                    Export to CSV
+                </button>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table id="interestTable" class="display" style="width:100%">
+                    <thead>
+                        <tr>
+                            <th>Scrip</th>
+                            <th>Investment Amount</th>
+                            <th>Avg Days Held</th>
+                            <th>Interest Rate</th>
+                            <th>Interest Cost</th>
+                            <th>Interest Percent of Investment</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="item in analysis" :key="item.Scrip">
+                            <tr class="hover:bg-gray-50 cursor-pointer" @click="viewScript(item.Scrip)">
+                                <td><span class="font-semibold text-blue-600" x-text="item.Scrip"></span></td>
+                                <td class="number-cell" x-text="formatCurrency(item['Investment Amount'])"></td>
+                                <td class="number-cell" x-text="formatNumber(item['Avg Days Held']) + ' days'"></td>
+                                <td class="number-cell" x-text="item['Interest Rate %'] + ' percent'"></td>
+                                <td class="number-cell text-orange-600 font-semibold" x-text="formatCurrency(item['Interest Cost'])"></td>
+                                <td class="number-cell">
+                                    <span class="font-semibold" :class="item['Interest % of Investment'] > 50 ? 'text-red-600' : 'text-orange-600'"
+                                          x-text="formatPercent(item['Interest % of Investment'])"></span>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                    <tfoot>
+                        <tr class="font-bold bg-gray-50">
+                            <td>TOTAL</td>
+                            <td class="number-cell" x-text="formatCurrency(totalInvestment)"></td>
+                            <td></td>
+                            <td></td>
+                            <td class="number-cell text-orange-600" x-text="formatCurrency(totalInterest)"></td>
+                            <td class="number-cell" x-text="formatPercent(avgInterestPct)"></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+
+        <!-- High Interest Warning -->
+        <div class="bg-red-50 border-l-4 border-red-500 rounded-lg p-6 mb-8" x-show="highInterestScripts.length > 0">
+            <h3 class="text-lg font-semibold text-red-900 mb-3">High Interest Cost Warning</h3>
+            <p class="text-red-800 mb-4">
+                The following <span class="font-bold" x-text="highInterestScripts.length"></span> scripts have interest costs
+                exceeding 50 percent of their investment. Consider evaluating if these positions are worth holding.
+            </p>
+            <div class="space-y-2">
+                <template x-for="script in highInterestScripts" :key="script.Scrip">
+                    <div class="bg-white rounded p-3 flex items-center justify-between">
+                        <div>
+                            <span class="font-semibold text-gray-800" x-text="script.Scrip"></span>
+                            <span class="text-sm text-gray-600 ml-2" x-text="'Held for ' + formatNumber(script['Avg Days Held']) + ' days'"></span>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-lg font-bold text-red-600" x-text="formatPercent(script['Interest % of Investment'])"></p>
+                            <p class="text-sm text-gray-600" x-text="formatCurrency(script['Interest Cost']) + ' interest cost'"></p>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    function interestData() {
+        return {
+            loading: true,
+            analysis: [],
+            totalInterest: 0,
+            totalInvestment: 0,
+            avgInterestPct: 0,
+            whatIfRate: 24,
+            whatIfInterest: 0,
+            whatIfNetPnl: 0,
+            currentNetPnl: 0,
+            dataTable: null,
+            interestChart: null,
+            durationChart: null,
+            scatterChart: null,
+
+            get highInterestScripts() {
+                return this.analysis.filter(s => s['Interest % of Investment'] > 50);
+            },
+
+            async init() {
+                await this.loadData();
+                this.$nextTick(() => {
+                    setTimeout(() => {
+                        this.initDataTable();
+                        this.createCharts();
+                        this.calculateWhatIf();
+                    }, 100);
+                });
+            },
+
+            async loadData() {
+                try {
+                    const [interestResponse, summaryResponse] = await Promise.all([
+                        fetch('/api/portfolio/interest'),
+                        fetch('/api/portfolio/summary')
+                    ]);
+
+                    const interestData = await interestResponse.json();
+                    const summaryData = await summaryResponse.json();
+
+                    this.analysis = interestData.analysis;
+                    this.totalInterest = interestData.total_interest;
+                    this.totalInvestment = interestData.total_investment;
+                    this.avgInterestPct = interestData.avg_interest_pct;
+                    this.currentNetPnl = summaryData.totals.net_pnl;
+
+                    this.loading = false;
+                } catch (error) {
+                    console.error('Error loading interest data:', error);
+                    this.loading = false;
+                }
+            },
+
+            calculateWhatIf() {
+                // Calculate new interest with different rate
+                const rateFactor = this.whatIfRate / 24;
+                this.whatIfInterest = this.totalInterest * rateFactor;
+
+                // Calculate new net P&L
+                const interestDiff = this.whatIfInterest - this.totalInterest;
+                this.whatIfNetPnl = this.currentNetPnl - interestDiff;
+            },
+
+            initDataTable() {
+                if (this.dataTable) {
+                    this.dataTable.destroy();
+                    this.dataTable = null;
+                }
+                this.dataTable = jQuery('#interestTable').DataTable({
+                    pageLength: 25,
+                    order: [[4, 'desc']], // Sort by Interest Cost
+                    columnDefs: [
+                        {
+                            targets: [1, 2, 3, 4, 5],
+                            className: 'number-cell',
+                            type: 'num',
+                            render: function(data, type, row) {
+                                if (type === 'sort' || type === 'type') {
+                                    // Remove currency symbols, commas, and percentages for sorting
+                                    if (typeof data === 'string') {
+                                        return parseFloat(data.replace(/[Rs.,\s%]/g, '')) || 0;
+                                    }
+                                    return parseFloat(data) || 0;
+                                }
+                                return data;
+                            }
+                        }
+                    ]
+                });
+            },
+
+            createCharts() {
+                // Interest Cost Chart (Top 20)
+                const top20 = [...this.analysis].slice(0, 20);
+                const interestCtx = document.getElementById('interestChart').getContext('2d');
+                this.interestChart = new Chart(interestCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: top20.map(s => s.Scrip),
+                        datasets: [{
+                            label: 'Interest Cost',
+                            data: top20.map(s => s['Interest Cost']),
+                            backgroundColor: top20.map(s =>
+                                s['Interest % of Investment'] > 50 ? '#EF4444' : '#F59E0B'
+                            )
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        indexAxis: 'y',
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return 'Rs. ' + context.parsed.x.toLocaleString('en-NP');
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                ticks: {
+                                    callback: function(value) {
+                                        return 'Rs. ' + (value / 1000).toFixed(0) + 'K';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+
+                // Duration Chart
+                const durationBuckets = {
+                    '0-6 months': 0,
+                    '6-12 months': 0,
+                    '1-2 years': 0,
+                    '2-3 years': 0,
+                    '3+ years': 0
+                };
+
+                this.analysis.forEach(s => {
+                    const days = s['Avg Days Held'];
+                    if (days <= 180) durationBuckets['0-6 months'] += s['Investment Amount'];
+                    else if (days <= 365) durationBuckets['6-12 months'] += s['Investment Amount'];
+                    else if (days <= 730) durationBuckets['1-2 years'] += s['Investment Amount'];
+                    else if (days <= 1095) durationBuckets['2-3 years'] += s['Investment Amount'];
+                    else durationBuckets['3+ years'] += s['Investment Amount'];
+                });
+
+                const durationCtx = document.getElementById('durationChart').getContext('2d');
+                this.durationChart = new Chart(durationCtx, {
+                    type: 'pie',
+                    data: {
+                        labels: Object.keys(durationBuckets),
+                        datasets: [{
+                            data: Object.values(durationBuckets),
+                            backgroundColor: ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6']
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return context.label + ': Rs. ' + context.parsed.toLocaleString('en-NP');
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+
+                // Scatter Chart
+                const scatterData = this.analysis.map(s => ({
+                    x: s['Investment Amount'],
+                    y: s['Interest Cost'],
+                    scrip: s['Scrip'],
+                    interestPct: s['Interest % of Investment']
+                }));
+
+                const scatterCtx = document.getElementById('scatterChart').getContext('2d');
+                this.scatterChart = new Chart(scatterCtx, {
+                    type: 'scatter',
+                    data: {
+                        datasets: [{
+                            label: 'Scripts',
+                            data: scatterData,
+                            backgroundColor: scatterData.map(s =>
+                                s.interestPct > 50 ? '#EF4444' : '#3B82F6'
+                            ),
+                            pointRadius: 6
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    title: function(context) {
+                                        return context[0].raw.scrip;
+                                    },
+                                    label: function(context) {
+                                        return [
+                                            'Investment: Rs. ' + context.parsed.x.toLocaleString('en-NP'),
+                                            'Interest: Rs. ' + context.parsed.y.toLocaleString('en-NP'),
+                                            'Interest %: ' + context.raw.interestPct.toFixed(2) + '%'
+                                        ];
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: 'Investment Amount (Rs.)'
+                                },
+                                ticks: {
+                                    callback: function(value) {
+                                        return 'Rs. ' + (value / 1000).toFixed(0) + 'K';
+                                    }
+                                }
+                            },
+                            y: {
+                                title: {
+                                    display: true,
+                                    text: 'Interest Cost (Rs.)'
+                                },
+                                ticks: {
+                                    callback: function(value) {
+                                        return 'Rs. ' + (value / 1000).toFixed(0) + 'K';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            },
+
+            viewScript(symbol) {
+                window.location.href = `/portfolio/script/${symbol}`;
+            },
+
+            exportToCSV() {
+                window.location.href = '/api/portfolio/export/interest';
+            },
+
+            formatCurrency,
+            formatPercent,
+            formatNumber
+        }
+    }
+</script>
+{% endblock %}

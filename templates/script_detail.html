@@ -1,0 +1,380 @@
+{% extends "base.html" %}
+
+{% block title %}{{ symbol }} - Script Detail{% endblock %}
+{% block page_title %}{{ symbol }}{% endblock %}
+
+{% block content %}
+<div x-data="scriptDetailData('{{ symbol }}')" x-init="init()">
+    <!-- Loading State -->
+    <div x-show="loading" class="flex justify-center items-center h-96">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <!-- Content -->
+    <div x-show="!loading" x-cloak>
+        <!-- Back Button and Chart Link -->
+        <div class="mb-6 flex items-center justify-between">
+            <a href="/portfolio/holdings" class="text-blue-600 hover:text-blue-800 font-medium">
+                Back to Holdings
+            </a>
+            <div class="flex space-x-4">
+                <a :href="'https://nepsealpha.com/trading/chart?symbol=' + symbol"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center space-x-2">
+                    <span>View Chart</span>
+                </a>
+                <a :href="'https://nepsealpha.com/search?q=' + symbol"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center space-x-2">
+                    <span>View Details</span>
+                </a>
+            </div>
+        </div>
+
+        <!-- Header Summary Cards -->
+        <div class="grid gap-6 mb-8" :class="window.interestVisible ? 'grid-cols-5' : 'grid-cols-4'">
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <p class="text-sm font-medium text-gray-500 mb-2">Current Holdings</p>
+                <p class="text-3xl font-bold text-gray-800" x-text="formatNumber(summary['Current Holdings'])"></p>
+                <p class="text-xs text-gray-500 mt-1">shares</p>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <p class="text-sm font-medium text-gray-500 mb-2">Average Cost</p>
+                <p class="text-2xl font-bold text-gray-800" x-text="formatCurrency(summary['Avg Cost'])"></p>
+                <p class="text-xs text-gray-500 mt-1">per share</p>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <p class="text-sm font-medium text-gray-500 mb-2">Current Price</p>
+                <p class="text-2xl font-bold text-gray-800" x-text="currentPrice ? formatCurrency(currentPrice) : 'N/A'"></p>
+                <p class="text-xs" :class="pnlClass(currentPrice - summary['Avg Cost'])" x-text="currentPrice ? formatCurrency(currentPrice - summary['Avg Cost']) + ' vs avg' : ''"></p>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <p class="text-sm font-medium text-gray-500 mb-2">Total P&L</p>
+                <p class="text-2xl font-bold" :class="pnlClass(summary['Total P&L'])" x-text="formatCurrency(summary['Total P&L'])"></p>
+                <p class="text-xs" :class="pnlClass(summary['Total Return %'])" x-text="formatPercent(summary['Total Return %'])"></p>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-6 interest-related">
+                <p class="text-sm font-medium text-gray-500 mb-2">Net P&L</p>
+                <p class="text-2xl font-bold" :class="pnlClass(summary['Net P&L (After Interest)'])" x-text="formatCurrency(summary['Net P&L (After Interest)'])"></p>
+                <p class="text-xs" :class="pnlClass(summary['Net Return %'])" x-text="formatPercent(summary['Net Return %'])"></p>
+            </div>
+        </div>
+
+        <!-- P&L Breakdown -->
+        <div class="grid gap-6 mb-8" :class="window.interestVisible ? 'grid-cols-3' : 'grid-cols-2'">
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Realized P&L</h3>
+                <p class="text-3xl font-bold" :class="pnlClass(summary['Realized P&L'])" x-text="formatCurrency(summary['Realized P&L'])"></p>
+                <p class="text-sm text-gray-500 mt-2">From completed trades</p>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Unrealized P&L</h3>
+                <p class="text-3xl font-bold" :class="pnlClass(summary['Unrealized P&L'])" x-text="formatCurrency(summary['Unrealized P&L'])"></p>
+                <p class="text-sm text-gray-500 mt-2">From current holdings</p>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-6 interest-related">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Interest Cost</h3>
+                <p class="text-3xl font-bold text-orange-600" x-text="formatCurrency(summary['Interest Cost'])"></p>
+                <p class="text-sm text-gray-500 mt-2">Opportunity cost at 24 percent</p>
+            </div>
+        </div>
+
+        <!-- 52-Week High/Low -->
+        <div class="grid grid-cols-2 gap-6 mb-8">
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">52-Week High</h3>
+                <p class="text-3xl font-bold text-green-600" x-text="summary['52 Week High'] ? formatCurrency(summary['52 Week High']) : 'N/A'"></p>
+                <p class="text-sm text-gray-500 mt-2" x-show="summary['52 Week High'] && currentPrice">
+                    <span :class="pnlClass(((currentPrice - summary['52 Week High']) / summary['52 Week High'] * 100))"
+                          x-text="formatPercent(((currentPrice - summary['52 Week High']) / summary['52 Week High'] * 100)) + ' from high'"></span>
+                </p>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">52-Week Low</h3>
+                <p class="text-3xl font-bold text-red-600" x-text="summary['52 Week Low'] ? formatCurrency(summary['52 Week Low']) : 'N/A'"></p>
+                <p class="text-sm text-gray-500 mt-2" x-show="summary['52 Week Low'] && currentPrice">
+                    <span :class="pnlClass(((currentPrice - summary['52 Week Low']) / summary['52 Week Low'] * 100))"
+                          x-text="formatPercent(((currentPrice - summary['52 Week Low']) / summary['52 Week Low'] * 100)) + ' from low'"></span>
+                </p>
+            </div>
+        </div>
+
+        <!-- Purchase History Chart -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">Purchase History & Price Points</h3>
+            <div class="h-96">
+                <canvas id="priceChart"></canvas>
+            </div>
+            <p class="text-sm text-gray-600 mt-4">
+                Blue dots: Your purchase points. Orange dots: Your sell points. Green line: Current price level.
+            </p>
+        </div>
+
+        <!-- Transaction History for this Script -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">Transaction History (<span x-text="transactions.length"></span> transactions)</h3>
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead class="bg-gray-100">
+                        <tr class="text-left">
+                            <th class="px-6 py-3 text-sm font-semibold text-gray-700">Date</th>
+                            <th class="px-6 py-3 text-sm font-semibold text-gray-700">Type</th>
+                            <th class="px-6 py-3 text-sm font-semibold text-gray-700 text-right">Quantity</th>
+                            <th class="px-6 py-3 text-sm font-semibold text-gray-700 text-right">Price</th>
+                            <th class="px-6 py-3 text-sm font-semibold text-gray-700 text-right">Amount</th>
+                            <th class="px-6 py-3 text-sm font-semibold text-gray-700">Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="(trans, index) in transactions" :key="'trans-' + index">
+                            <tr class="border-t border-gray-200 hover:bg-gray-50">
+                                <td class="px-6 py-4 text-sm" x-text="formatDate(trans.Date)"></td>
+                                <td class="px-6 py-4"><span class="badge text-xs" :class="'badge-' + trans.Type.toLowerCase()" x-text="trans.Type"></span></td>
+                                <td class="px-6 py-4 text-sm number-cell" x-text="formatNumber(trans.Quantity)"></td>
+                                <td class="px-6 py-4 text-sm number-cell" x-text="formatCurrency(trans.Price)"></td>
+                                <td class="px-6 py-4 text-sm number-cell" :class="trans.Type === 'SELL' ? 'profit' : 'neutral'" x-text="formatCurrency(trans.Amount)"></td>
+                                <td class="px-6 py-4 text-sm text-gray-500" x-text="trans.Description"></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Current Holding Lots -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">Current Holding Lots (FIFO Order)</h3>
+            <p class="text-sm text-gray-600 mb-4">
+                These are the specific lots you currently hold. If you sell, FIFO rules will sell from the top of this list first.
+            </p>
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead class="bg-gray-100">
+                        <tr class="text-left">
+                            <th class="px-6 py-3 text-sm font-semibold text-gray-700">Purchase Date</th>
+                            <th class="px-6 py-3 text-sm font-semibold text-gray-700">Type</th>
+                            <th class="px-6 py-3 text-sm font-semibold text-gray-700 text-right">Quantity</th>
+                            <th class="px-6 py-3 text-sm font-semibold text-gray-700 text-right">Purchase Price</th>
+                            <th class="px-6 py-3 text-sm font-semibold text-gray-700 text-right">Cost Basis</th>
+                            <th class="px-6 py-3 text-sm font-semibold text-gray-700 text-right">Days Held</th>
+                            <th class="px-6 py-3 text-sm font-semibold text-gray-700 text-right interest-column">Interest Cost</th>
+                            <th class="px-6 py-3 text-sm font-semibold text-gray-700 text-right">Current Value</th>
+                            <th class="px-6 py-3 text-sm font-semibold text-gray-700 text-right">Unrealized P&L</th>
+                            <th class="px-6 py-3 text-sm font-semibold text-gray-700 text-right interest-column">Net P&L</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="(lot, index) in lots" :key="index">
+                            <tr class="border-t border-gray-200 hover:bg-gray-50" :class="index === 0 ? 'bg-blue-50' : ''">
+                                <td class="px-6 py-4 text-sm">
+                                    <span x-text="formatDate(lot['Purchase Date'])"></span>
+                                    <span x-show="index === 0" class="ml-2 text-xs text-blue-600 font-semibold">← Oldest (sells first)</span>
+                                </td>
+                                <td class="px-6 py-4"><span class="badge text-xs" :class="'badge-' + lot.Type.toLowerCase()" x-text="lot.Type"></span></td>
+                                <td class="px-6 py-4 text-sm number-cell" x-text="formatNumber(lot.Quantity)"></td>
+                                <td class="px-6 py-4 text-sm number-cell" x-text="formatCurrency(lot['Purchase Price'])"></td>
+                                <td class="px-6 py-4 text-sm number-cell" x-text="formatCurrency(lot['Cost Basis'])"></td>
+                                <td class="px-6 py-4 text-sm number-cell" x-text="lot['Days Held'] + ' days'"></td>
+                                <td class="px-6 py-4 text-sm number-cell text-orange-600 interest-column" x-text="formatCurrency(lot['Interest Cost'])"></td>
+                                <td class="px-6 py-4 text-sm number-cell" x-text="lot['Current Value'] ? formatCurrency(lot['Current Value']) : 'N/A'"></td>
+                                <td class="px-6 py-4 text-sm number-cell" :class="pnlClass(lot['Unrealized P&L'])" x-text="lot['Unrealized P&L'] !== null ? formatCurrency(lot['Unrealized P&L']) : 'N/A'"></td>
+                                <td class="px-6 py-4 text-sm number-cell font-semibold interest-column" :class="pnlClass(lot['Net P&L (After Interest)'])" x-text="lot['Net P&L (After Interest)'] !== null ? formatCurrency(lot['Net P&L (After Interest)']) : 'N/A'"></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- P&L Breakdown Chart -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">P&L Breakdown</h3>
+            <div class="h-96">
+                <canvas id="pnlChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    function scriptDetailData(symbol) {
+        return {
+            loading: true,
+            symbol: symbol,
+            summary: {},
+            transactions: [],
+            lots: [],
+            currentPrice: 0,
+            priceChart: null,
+            pnlChart: null,
+
+            async init() {
+                await this.loadData();
+                this.$nextTick(() => {
+                    this.createCharts();
+                });
+            },
+
+            async loadData() {
+                try {
+                    const response = await fetch(`/api/portfolio/script/${this.symbol}`);
+                    const data = await response.json();
+                    this.summary = data.summary;
+                    this.transactions = data.transactions;
+                    this.lots = data.lots;
+                    this.currentPrice = data.current_price;
+                    this.loading = false;
+                } catch (error) {
+                    console.error('Error loading script details:', error);
+                    this.loading = false;
+                }
+            },
+
+            createCharts() {
+                // Price Chart with Purchase/Sell Points
+                const buys = this.transactions.filter(t => ['BUY', 'IPO', 'BONUS', 'RIGHTS'].includes(t.Type));
+                const sells = this.transactions.filter(t => t.Type === 'SELL');
+
+                const priceCtx = document.getElementById('priceChart').getContext('2d');
+                this.priceChart = new Chart(priceCtx, {
+                    type: 'scatter',
+                    data: {
+                        datasets: [
+                            {
+                                label: 'Buy Points',
+                                data: buys.map(t => ({
+                                    x: new Date(t.Date),
+                                    y: t.Price
+                                })),
+                                backgroundColor: '#3B82F6',
+                                pointRadius: 6
+                            },
+                            {
+                                label: 'Sell Points',
+                                data: sells.map(t => ({
+                                    x: new Date(t.Date),
+                                    y: t.Price
+                                })),
+                                backgroundColor: '#F59E0B',
+                                pointRadius: 6
+                            },
+                            {
+                                label: 'Current Price',
+                                data: this.currentPrice ? [
+                                    { x: new Date(buys[0]?.Date || Date.now()), y: this.currentPrice },
+                                    { x: new Date(), y: this.currentPrice }
+                                ] : [],
+                                borderColor: '#10B981',
+                                borderWidth: 2,
+                                borderDash: [5, 5],
+                                pointRadius: 0,
+                                showLine: true,
+                                fill: false
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return context.dataset.label + ': Rs. ' + context.parsed.y.toFixed(2);
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                type: 'time',
+                                time: {
+                                    unit: 'month'
+                                },
+                                title: {
+                                    display: true,
+                                    text: 'Date'
+                                }
+                            },
+                            y: {
+                                title: {
+                                    display: true,
+                                    text: 'Price (Rs.)'
+                                },
+                                ticks: {
+                                    callback: function(value) {
+                                        return 'Rs. ' + value;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+
+                // P&L Breakdown Chart
+                const pnlData = {
+                    'Realized P&L': this.summary['Realized P&L'] || 0,
+                    'Unrealized P&L': this.summary['Unrealized P&L'] || 0,
+                    'Interest Cost': -(this.summary['Interest Cost'] || 0) // Negative to show as cost
+                };
+
+                const pnlCtx = document.getElementById('pnlChart').getContext('2d');
+                this.pnlChart = new Chart(pnlCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: Object.keys(pnlData),
+                        datasets: [{
+                            data: Object.values(pnlData),
+                            backgroundColor: [
+                                pnlData['Realized P&L'] >= 0 ? '#10B981' : '#EF4444',
+                                pnlData['Unrealized P&L'] >= 0 ? '#10B981' : '#EF4444',
+                                '#F59E0B'
+                            ]
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return 'Rs. ' + Math.abs(context.parsed.y).toLocaleString('en-NP');
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                ticks: {
+                                    callback: function(value) {
+                                        return 'Rs. ' + (value / 1000).toFixed(0) + 'K';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            },
+
+            formatDate(dateStr) {
+                const date = new Date(dateStr);
+                return date.toLocaleDateString('en-NP', { year: 'numeric', month: 'short', day: '2-digit' });
+            },
+
+            formatCurrency,
+            formatPercent,
+            formatNumber,
+            pnlClass
+        }
+    }
+</script>
+
+<!-- Chart.js Time adapter for timeline -->
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+{% endblock %}

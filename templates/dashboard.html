@@ -1,0 +1,283 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Portfolio Viewer{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<div x-data="dashboardData()" x-init="init()">
+    <!-- Loading State -->
+    <div x-show="loading" class="flex justify-center items-center h-96">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <!-- Content -->
+    <div x-show="!loading" x-cloak>
+        <!-- Summary Cards -->
+        <div class="grid grid-cols-3 gap-6 mb-8">
+            <!-- Total Investment -->
+            <div class="stat-card bg-white rounded-lg shadow-md p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-gray-500">Total Investment</p>
+                        <p class="text-2xl font-bold text-gray-800 mt-2" x-text="formatCurrency(totals.total_investment)"></p>
+                        <p class="text-xs text-gray-500 mt-1" x-text="scriptCount + ' scripts'"></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Current Value -->
+            <div class="stat-card bg-white rounded-lg shadow-md p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-gray-500">Current Value</p>
+                        <p class="text-2xl font-bold text-gray-800 mt-2" x-text="formatCurrency(totals.current_value)"></p>
+                        <p class="text-xs mt-1" :class="pnlClass(totals.current_value - totals.total_investment)" x-text="formatCurrency(totals.current_value - totals.total_investment) + ' change'"></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Total P&L -->
+            <div class="stat-card bg-white rounded-lg shadow-md p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-gray-500">Total P&L</p>
+                        <p class="text-2xl font-bold mt-2" :class="pnlClass(totals.total_pnl)" x-text="formatCurrency(totals.total_pnl)"></p>
+                        <p class="text-xs mt-1" :class="pnlClass(totals.total_return_pct)" x-text="formatPercent(totals.total_return_pct) + ' return'"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- P&L Breakdown -->
+        <div class="grid grid-cols-2 gap-6 mb-8">
+            <!-- Realized P&L -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Realized P&L</h3>
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-3xl font-bold" :class="pnlClass(totals.realized_pnl)" x-text="formatCurrency(totals.realized_pnl)"></p>
+                        <p class="text-sm text-gray-500 mt-2">From completed trades</p>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-sm text-gray-500">Scripts Fully Sold</p>
+                        <p class="text-2xl font-bold text-gray-800" x-text="stats.scripts_fully_sold"></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Unrealized P&L -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Unrealized P&L</h3>
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-3xl font-bold" :class="pnlClass(totals.unrealized_pnl)" x-text="formatCurrency(totals.unrealized_pnl)"></p>
+                        <p class="text-sm text-gray-500 mt-2">From current holdings</p>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-sm text-gray-500">Scripts With Holdings</p>
+                        <p class="text-2xl font-bold text-gray-800" x-text="stats.scripts_with_holdings"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Portfolio Composition Chart -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">Portfolio Composition (Top 10 by Investment)</h3>
+            <div class="h-80">
+                <canvas id="compositionChart"></canvas>
+            </div>
+        </div>
+
+         <!-- Close to 52 Week High -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">Close to 52 Week High (Top 10)</h3>
+            <div class="grid grid-cols-2 gap-4">
+                <template x-for="(script, index) in closeTo52WeekHigh" :key="index">
+                    <div class="flex items-center justify-between p-3 bg-blue-50 rounded-lg hover:bg-blue-100 transition cursor-pointer" @click="viewScript(script.Scrip)">
+                        <div class="flex items-center">
+                            <span class="text-lg font-bold text-blue-600 mr-3" x-text="(index + 1) + '.'"></span>
+                            <div>
+                                <p class="font-semibold text-gray-800" x-text="script.Scrip"></p>
+                                <p class="text-sm text-gray-500">
+                                    <span x-text="formatCurrency(script['Current Price'])"></span> /
+                                    <span x-text="formatCurrency(script['52 Week High'])"></span>
+                                </p>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-lg font-bold text-blue-600" x-text="formatPercent(script['Distance from High %'])"></p>
+                            <p class="text-xs text-gray-500">from high</p>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+        
+        <!-- Performers -->
+        <div class="grid grid-cols-2 gap-6 mb-8">
+            <!-- Top Performers -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Top 5 Performers (Unrealized P&L %)</h3>
+                <div class="space-y-3">
+                    <template x-for="(script, index) in topPerformers" :key="index">
+                        <div class="flex items-center justify-between p-3 bg-green-50 rounded-lg hover:bg-green-100 transition cursor-pointer" @click="viewScript(script.Scrip)">
+                            <div class="flex items-center">
+                                <span class="text-lg font-bold text-green-600 mr-3" x-text="(index + 1) + '.'"></span>
+                                <div>
+                                    <p class="font-semibold text-gray-800" x-text="script.Scrip"></p>
+                                    <p class="text-sm text-gray-500" x-text="formatCurrency(script['Unrealized P&L'])"></p>
+                                </div>
+                            </div>
+                            <div class="text-right">
+                                <p class="text-lg font-bold text-green-600" x-text="formatPercent(script['Unrealized P&L %'])"></p>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Bottom Performers -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Bottom 5 Performers (Unrealized P&L %)</h3>
+                <div class="space-y-3">
+                    <template x-for="(script, index) in bottomPerformers" :key="index">
+                        <div class="flex items-center justify-between p-3 bg-red-50 rounded-lg hover:bg-red-100 transition cursor-pointer" @click="viewScript(script.Scrip)">
+                            <div class="flex items-center">
+                                <span class="text-lg font-bold text-red-600 mr-3" x-text="(index + 1) + '.'"></span>
+                                <div>
+                                    <p class="font-semibold text-gray-800" x-text="script.Scrip"></p>
+                                    <p class="text-sm text-gray-500" x-text="formatCurrency(script['Unrealized P&L'])"></p>
+                                </div>
+                            </div>
+                            <div class="text-right">
+                                <p class="text-lg font-bold text-red-600" x-text="formatPercent(script['Unrealized P&L %'])"></p>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+
+       
+
+        <!-- Portfolio Statistics -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">Portfolio Statistics</h3>
+            <div class="grid grid-cols-4 gap-6">
+                <div>
+                    <p class="text-sm text-gray-500">Total Scripts</p>
+                    <p class="text-2xl font-bold text-gray-800 mt-1" x-text="stats.total_scripts"></p>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">Profit Making</p>
+                    <p class="text-2xl font-bold text-green-600 mt-1" x-text="stats.profit_making_scripts"></p>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">Loss Making</p>
+                    <p class="text-2xl font-bold text-red-600 mt-1" x-text="stats.loss_making_scripts"></p>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">Total Transactions</p>
+                    <p class="text-2xl font-bold text-gray-800 mt-1" x-text="stats.total_transactions"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    function dashboardData() {
+        return {
+            loading: true,
+            totals: {},
+            scripts: [],
+            stats: {},
+            topPerformers: [],
+            bottomPerformers: [],
+            closeTo52WeekHigh: [],
+            scriptCount: 0,
+            compositionChart: null,
+
+            async init() {
+                await this.loadData();
+                this.$nextTick(() => {
+                    this.createCharts();
+                });
+            },
+
+            async loadData() {
+                try {
+                    // Load portfolio summary
+                    const summaryResponse = await fetch('/api/portfolio/summary');
+                    const summaryData = await summaryResponse.json();
+                    this.totals = summaryData.totals;
+                    this.scripts = summaryData.scripts;
+                    this.scriptCount = summaryData.script_count;
+
+                    // Load stats
+                    const statsResponse = await fetch('/api/portfolio/stats');
+                    this.stats = await statsResponse.json();
+                    this.topPerformers = this.stats.top_performers;
+                    this.bottomPerformers = this.stats.bottom_performers;
+                    this.closeTo52WeekHigh = this.stats.close_to_52week_high || [];
+
+                    this.loading = false;
+                } catch (error) {
+                    console.error('Error loading data:', error);
+                    this.loading = false;
+                }
+            },
+
+            createCharts() {
+                // Portfolio Composition Chart
+                const compositionData = this.scripts
+                    .filter(s => s['Current Holdings'] > 0)
+                    .sort((a, b) => b['Total Investment'] - a['Total Investment'])
+                    .slice(0, 10);
+
+                const compositionCtx = document.getElementById('compositionChart').getContext('2d');
+                this.compositionChart = new Chart(compositionCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: compositionData.map(s => s.Scrip),
+                        datasets: [{
+                            data: compositionData.map(s => s['Total Investment']),
+                            backgroundColor: [
+                                '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6',
+                                '#EC4899', '#14B8A6', '#F97316', '#6366F1', '#84CC16'
+                            ]
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'right'
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return context.label + ': Rs. ' + context.parsed.toLocaleString('en-NP');
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            },
+
+            viewScript(symbol) {
+                window.location.href = `/portfolio/script/${symbol}`;
+            },
+
+            formatCurrency,
+            formatPercent,
+            pnlClass
+        }
+    }
+</script>
+{% endblock %}

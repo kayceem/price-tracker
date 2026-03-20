@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Portfolio Viewer{% endblock %}</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Alpine.js -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <!-- DataTables -->
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/jquery.dataTables.min.css">
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
+
+    <!-- Custom Styles -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .nav-link {
+            transition: all 0.3s ease;
+        }
+
+        .nav-link:hover {
+            background-color: rgba(59, 130, 246, 0.1);
+        }
+
+        .nav-link.active {
+            background-color: rgba(59, 130, 246, 0.2);
+            border-left: 4px solid #3B82F6;
+        }
+
+        .stat-card {
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+        }
+
+        .profit {
+            color: #10B981;
+        }
+
+        .loss {
+            color: #EF4444;
+        }
+
+        .neutral {
+            color: #6B7280;
+        }
+
+        .badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .badge-buy {
+            background-color: #DBEAFE;
+            color: #1E40AF;
+        }
+
+        .badge-sell {
+            background-color: #FED7AA;
+            color: #C2410C;
+        }
+
+        .badge-ipo {
+            background-color: #D1FAE5;
+            color: #065F46;
+        }
+
+        .badge-bonus {
+            background-color: #E0E7FF;
+            color: #3730A3;
+        }
+
+        .badge-rights {
+            background-color: #FCE7F3;
+            color: #9F1239;
+        }
+
+        /* DataTables customization */
+        .dataTables_wrapper .dataTables_length select {
+            padding: 0.25rem 0.5rem;
+            border: 1px solid #D1D5DB;
+            border-radius: 0.375rem;
+        }
+
+        .dataTables_wrapper .dataTables_filter input {
+            padding: 0.5rem;
+            border: 1px solid #D1D5DB;
+            border-radius: 0.375rem;
+            margin-left: 0.5rem;
+        }
+
+        table.dataTable thead th {
+            background-color: #F9FAFB;
+            font-weight: 600;
+            color: #374151;
+            padding: 1rem;
+        }
+
+        table.dataTable tbody tr {
+            transition: background-color 0.2s ease;
+        }
+
+        table.dataTable tbody tr:hover {
+            background-color: #F9FAFB;
+        }
+
+        table.dataTable tbody td {
+            padding: 0.75rem 1rem;
+        }
+
+        .number-cell {
+            font-family: 'Courier New', monospace;
+            text-align: right;
+        }
+
+        .loading-spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3B82F6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .tooltip {
+            position: relative;
+            display: inline-block;
+        }
+
+        .tooltip .tooltiptext {
+            visibility: hidden;
+            width: 200px;
+            background-color: #1F2937;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 8px;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -100px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 0.875rem;
+        }
+
+        .tooltip:hover .tooltiptext {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        .interest-hidden {
+            display: none !important;
+        }
+
+        .interest-blurred {
+            filter: blur(8px);
+            pointer-events: none;
+            user-select: none;
+        }
+
+        /* Hide interest columns in holdings table when interest is disabled */
+        body.hide-interest #holdingsTable th:nth-child(10),
+        body.hide-interest #holdingsTable td:nth-child(10),
+        body.hide-interest #holdingsTable th:nth-child(11),
+        body.hide-interest #holdingsTable td:nth-child(11) {
+            display: none !important;
+        }
+
+        /* Hide interest columns in script detail and other tables */
+        body.hide-interest .interest-column {
+            display: none !important;
+        }
+
+        /* Script search input focus styles */
+        input[type="text"]:focus {
+            outline: none;
+        }
+
+        /* Scrollbar styling for suggestions dropdown */
+        .max-h-64::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .max-h-64::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+
+        .max-h-64::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 3px;
+        }
+
+        .max-h-64::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+    </style>
+
+    {% block extra_head %}{% endblock %}
+</head>
+<body class="bg-gray-50">
+    <div class="flex h-screen">
+        <!-- Sidebar -->
+        <aside class="w-64 bg-white shadow-lg">
+            <div class="px-6 py-5 border-b border-gray-200">
+                <h1 class="text-2xl font-bold text-gray-800">Portfolio Viewer</h1>
+            </div>
+
+            <nav class="mt-6">
+                <a href="/portfolio" class="nav-link flex items-center px-6 py-3 text-gray-700 {% if request.path == '/portfolio' %}active{% endif %}">
+                    Dashboard
+                </a>
+
+                <a href="/portfolio/holdings" class="nav-link flex items-center px-6 py-3 text-gray-700 {% if '/holdings' in request.path %}active{% endif %}">
+                    Current Holdings
+                </a>
+
+                <a href="/portfolio/transactions" class="nav-link flex items-center px-6 py-3 text-gray-700 {% if '/transactions' in request.path %}active{% endif %}">
+                    Transaction History
+                </a>
+
+                <a href="/portfolio/lots" class="nav-link flex items-center px-6 py-3 text-gray-700 {% if '/lots' in request.path %}active{% endif %}">
+                    Lots & FIFO
+                </a>
+
+                <a href="/portfolio/interest" class="nav-link flex items-center px-6 py-3 text-gray-700 {% if request.path == '/portfolio/interest' %}active{% endif %}">
+                    Interest Analysis
+                </a>
+
+                <a href="/portfolio/sold-interest" class="nav-link flex items-center px-6 py-3 text-gray-700 {% if '/sold-interest' in request.path %}active{% endif %}">
+                    Interest Analysis (Sold)
+                </a>
+
+                <a href="/portfolio/reports" class="nav-link flex items-center px-6 py-3 text-gray-700 {% if '/reports' in request.path %}active{% endif %}">
+                    Reports & Export
+                </a>
+            </nav>
+
+            <div class="absolute bottom-0 w-64 p-6 border-t border-gray-200 bg-gray-50">
+                <div class="text-xs text-gray-500">
+                    <p class="font-semibold">Interest Rate: 24%</p>
+                    <p class="mt-1">FIFO Method</p>
+                    <p class="mt-1">Last Updated: <span id="last-updated">--</span></p>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 overflow-y-auto">
+            <!-- Top Bar -->
+            <div class="bg-white shadow-sm border-b border-gray-200 px-8 py-4" x-data="topBarData()">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-2xl font-semibold text-gray-800">{% block page_title %}Dashboard{% endblock %}</h2>
+                    <div class="flex items-center space-x-4">
+                        <!-- Script Search -->
+                        <div class="relative" @click.away="showSuggestions = false">
+                            <input
+                                type="text"
+                                id="scriptSearchInput"
+                                x-model="searchQuery"
+                                @input="updateSuggestions()"
+                                @focus="showSuggestions = true"
+                                @keydown.down.prevent="selectedIndex = Math.min(selectedIndex + 1, filteredScripts.length - 1)"
+                                @keydown.up.prevent="selectedIndex = Math.max(selectedIndex - 1, 0)"
+                                @keydown.enter.prevent="navigateToScript(filteredScripts[selectedIndex])"
+                                placeholder="Search scripts... (Ctrl+K)"
+                                class="px-4 py-2 w-64 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                            >
+                            <!-- Suggestions Dropdown -->
+                            <div x-show="showSuggestions && filteredScripts.length > 0"
+                                 class="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                                <template x-for="(script, index) in filteredScripts" :key="script">
+                                    <div
+                                        @click="navigateToScript(script)"
+                                        @mouseenter="selectedIndex = index"
+                                        :class="selectedIndex === index ? 'bg-blue-50' : 'hover:bg-gray-50'"
+                                        class="px-4 py-2 cursor-pointer text-sm border-b border-gray-100 last:border-b-0"
+                                    >
+                                        <span class="font-semibold text-gray-800" x-text="script"></span>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+
+                        <!-- External Links -->
+                        <a href="https://tms01.nepsetms.com.np/tms/client/dashboard"
+                           target="_blank"
+                           rel="noopener noreferrer"
+                           class="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition">
+                            TMS
+                        </a>
+                        <a href="https://nepsealpha.com/trading/chart?symbol=NEPSE"
+                           target="_blank"
+                           rel="noopener noreferrer"
+                           class="px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 transition">
+                            Charts
+                        </a>
+
+                        <!-- Interest Toggle -->
+                        <label class="flex items-center space-x-3 cursor-pointer">
+                            <span class="text-sm font-medium text-gray-700">Show Interest</span>
+                            <div class="relative">
+                                <input
+                                    type="checkbox"
+                                    class="sr-only"
+                                    x-model="showInterest"
+                                    @change="localStorage.setItem('showInterest', showInterest); window.dispatchEvent(new CustomEvent('interest-toggle', { detail: showInterest }));"
+                                >
+                                <div class="block bg-gray-300 w-14 h-8 rounded-full" :class="showInterest ? 'bg-blue-600' : 'bg-gray-300'"></div>
+                                <div class="dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition" :class="showInterest ? 'transform translate-x-6' : ''"></div>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Page Content -->
+            <div class="p-8">
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+    </div>
+
+    <!-- Common JavaScript -->
+    <script>
+        // Top bar data with script search
+        function topBarData() {
+            return {
+                showInterest: localStorage.getItem('showInterest') !== 'false',
+                searchQuery: '',
+                showSuggestions: false,
+                selectedIndex: 0,
+                allScripts: [],
+                filteredScripts: [],
+
+                async init() {
+                    // Load all script names
+                    try {
+                        const response = await fetch('/api/portfolio/summary');
+                        const data = await response.json();
+                        this.allScripts = data.scripts.map(s => s.Scrip).sort();
+                    } catch (error) {
+                        console.error('Error loading scripts:', error);
+                    }
+                },
+
+                updateSuggestions() {
+                    this.selectedIndex = 0;
+                    if (this.searchQuery.trim() === '') {
+                        this.filteredScripts = [];
+                        return;
+                    }
+                    const query = this.searchQuery.toLowerCase();
+                    this.filteredScripts = this.allScripts
+                        .filter(script => script.toLowerCase().includes(query))
+                        .slice(0, 10);
+                },
+
+                navigateToScript(script) {
+                    if (script) {
+                        window.location.href = `/portfolio/script/${script}`;
+                    }
+                }
+            }
+        }
+
+        // Interest visibility state
+        window.interestVisible = localStorage.getItem('showInterest') !== 'false';
+
+        // Listen for interest toggle events
+        window.addEventListener('interest-toggle', function(e) {
+            window.interestVisible = e.detail;
+            updateInterestVisibility();
+        });
+
+        // Update interest visibility on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            updateInterestVisibility();
+        });
+
+        function updateInterestVisibility() {
+            const elements = document.querySelectorAll('.interest-related');
+            elements.forEach(el => {
+                if (window.interestVisible) {
+                    el.classList.remove('interest-hidden');
+                    document.body.classList.remove('hide-interest');
+                } else {
+                    el.classList.add('interest-hidden');
+                    document.body.classList.add('hide-interest');
+                }
+            });
+        }
+
+        // Ctrl+K to focus search
+        document.addEventListener('keydown', function(e) {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+                e.preventDefault();
+                const searchInput = document.getElementById('scriptSearchInput');
+                if (searchInput) {
+                    searchInput.focus();
+                    searchInput.select();
+                }
+            }
+        });
+
+        // Format currency
+        function formatCurrency(value) {
+            if (value === null || value === undefined || value === 0) return 'Rs. 0.00';
+            return 'Rs. ' + parseFloat(value).toLocaleString('en-NP', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            });
+        }
+
+        // Format percentage
+        function formatPercent(value) {
+            if (value === null || value === undefined) return '0.00%';
+            return parseFloat(value).toFixed(2) + '%';
+        }
+
+        // Format number
+        function formatNumber(value) {
+            if (value === null || value === undefined) return '0';
+            return parseFloat(value).toLocaleString('en-NP', {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 2
+            });
+        }
+
+        // Color for P&L
+        function pnlClass(value) {
+            if (value > 0) return 'profit';
+            if (value < 0) return 'loss';
+            return 'neutral';
+        }
+
+        // Transaction type badge
+        function typeBadge(type) {
+            const badges = {
+                'BUY': 'badge-buy',
+                'SELL': 'badge-sell',
+                'IPO': 'badge-ipo',
+                'BONUS': 'badge-bonus',
+                'RIGHTS': 'badge-rights'
+            };
+            return `<span class="badge ${badges[type] || 'badge-buy'}">${type}</span>`;
+        }
+
+        // Update last updated time
+        function updateLastUpdated() {
+            document.getElementById('last-updated').textContent = new Date().toLocaleString('en-NP');
+        }
+
+        updateLastUpdated();
+    </script>
+
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

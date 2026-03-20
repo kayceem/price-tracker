@@ -1,0 +1,329 @@
+{% extends "base.html" %}
+
+{% block title %}Sold Stocks Interest Analysis - Portfolio Viewer{% endblock %}
+{% block page_title %}Interest Cost Analysis (Sold Stocks){% endblock %}
+
+{% block content %}
+<div x-data="soldInterestData()" x-init="init()">
+    <!-- Loading State -->
+    <div x-show="loading" class="flex justify-center items-center h-96">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <!-- Content -->
+    <div x-show="!loading" x-cloak>
+        <!-- Explanation Banner -->
+        <div class="bg-red-50 border-l-4 border-red-500 rounded-lg p-6 mb-8">
+            <h3 class="text-lg font-semibold text-red-900 mb-2">Interest Cost on Sold Stocks</h3>
+            <p class="text-red-800 mb-3">
+                This analysis shows the interest cost (opportunity cost) you incurred on stocks you have already sold.
+                The interest is calculated from the purchase date to the sell date for each lot.
+            </p>
+            <p class="text-red-800 font-medium">
+                This helps you understand the true profitability of your completed trades after accounting for the
+                opportunity cost of having your money tied up in these stocks.
+            </p>
+        </div>
+
+        <!-- Summary Cards -->
+        <div class="grid grid-cols-4 gap-6 mb-8">
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <p class="text-sm font-medium text-gray-500 mb-2">Total Interest Cost</p>
+                <p class="text-4xl font-bold text-orange-600" x-text="formatCurrency(totalInterest)"></p>
+                <p class="text-sm text-gray-600 mt-2">On all sold stocks</p>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <p class="text-sm font-medium text-gray-500 mb-2">Total Investment</p>
+                <p class="text-4xl font-bold text-gray-800" x-text="formatCurrency(totalInvestment)"></p>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <p class="text-sm font-medium text-gray-500 mb-2">Realized P&L</p>
+                <p class="text-4xl font-bold" :class="pnlClass(totalRealizedPnl)" x-text="formatCurrency(totalRealizedPnl)"></p>
+                <p class="text-sm text-gray-600 mt-2">Before interest</p>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <p class="text-sm font-medium text-gray-500 mb-2">Net P&L (After Interest)</p>
+                <p class="text-4xl font-bold" :class="pnlClass(totalNetPnl)" x-text="formatCurrency(totalNetPnl)"></p>
+                <p class="text-sm" :class="pnlClass(totalNetPnl / totalInvestment * 100)" x-text="formatPercent(totalNetPnl / totalInvestment * 100) + ' return'"></p>
+            </div>
+        </div>
+
+        <!-- Interest vs P&L Comparison -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <h3 class="text-xl font-semibold text-gray-800 mb-6">Interest Cost vs Realized P&L</h3>
+            <div class="h-96">
+                <canvas id="comparisonChart"></canvas>
+            </div>
+            <p class="text-sm text-gray-600 mt-4">
+                This chart shows scripts where interest cost significantly impacted your realized profits.
+            </p>
+        </div>
+
+        <!-- Detailed Table -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <h3 class="text-xl font-semibold text-gray-800 mb-6">Interest Cost Analysis by Script</h3>
+            <div class="overflow-x-auto">
+                <table id="soldInterestTable" class="display" style="width:100%">
+                    <thead>
+                        <tr>
+                            <th>Scrip</th>
+                            <th>Total Sold Quantity</th>
+                            <th>Investment Amount</th>
+                            <th>Avg Days Held</th>
+                            <th>Interest Rate %</th>
+                            <th>Interest Cost</th>
+                            <th>Interest % of Investment</th>
+                            <th>Realized P&L</th>
+                            <th>Net P&L</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- High Impact Scripts -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h3 class="text-xl font-semibold text-gray-800 mb-4">Scripts Where Interest Turned Profit into Loss</h3>
+            <div x-show="turnedToLossScripts.length === 0" class="text-center py-8 text-gray-500">
+                <p>No scripts found where interest cost turned profit into loss.</p>
+            </div>
+            <div x-show="turnedToLossScripts.length > 0" class="space-y-3">
+                <template x-for="script in turnedToLossScripts" :key="script.Scrip">
+                    <div class="flex items-center justify-between p-4 bg-red-50 rounded-lg">
+                        <div class="flex-1">
+                            <p class="font-semibold text-gray-800" x-text="script.Scrip"></p>
+                            <p class="text-sm text-gray-600">
+                                Held for <span x-text="Math.round(script['Avg Days Held'])"></span> days
+                            </p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-sm text-gray-500">Realized P&L</p>
+                            <p class="text-lg font-bold profit" x-text="formatCurrency(script['Realized P&L'])"></p>
+                        </div>
+                        <div class="text-right mx-6">
+                            <p class="text-sm text-gray-500">Interest Cost</p>
+                            <p class="text-lg font-bold text-orange-600" x-text="formatCurrency(script['Interest Cost'])"></p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-sm text-gray-500">Net P&L</p>
+                            <p class="text-lg font-bold loss" x-text="formatCurrency(script['Net P&L (After Interest)'])"></p>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    function soldInterestData() {
+        return {
+            loading: true,
+            analysis: [],
+            totalInterest: 0,
+            totalInvestment: 0,
+            totalRealizedPnl: 0,
+            totalNetPnl: 0,
+            avgInterestPct: 0,
+            dataTable: null,
+            comparisonChart: null,
+
+            get turnedToLossScripts() {
+                return this.analysis.filter(s =>
+                    s['Realized P&L'] > 0 && s['Net P&L (After Interest)'] < 0
+                );
+            },
+
+            async init() {
+                await this.loadData();
+                this.$nextTick(() => {
+                    setTimeout(() => {
+                        this.initDataTable();
+                        this.createCharts();
+                    }, 100);
+                });
+            },
+
+            async loadData() {
+                try {
+                    const response = await fetch('/api/portfolio/sold-interest');
+                    const data = await response.json();
+
+                    this.analysis = data.analysis;
+                    this.totalInterest = data.total_interest;
+                    this.totalInvestment = data.total_investment;
+                    this.totalRealizedPnl = data.total_realized_pnl;
+                    this.totalNetPnl = data.total_net_pnl;
+                    this.avgInterestPct = data.avg_interest_pct;
+
+                    this.loading = false;
+                } catch (error) {
+                    console.error('Error loading sold interest data:', error);
+                    this.loading = false;
+                }
+            },
+
+            initDataTable() {
+                if (this.dataTable) {
+                    this.dataTable.destroy();
+                    this.dataTable = null;
+                }
+
+                this.dataTable = jQuery('#soldInterestTable').DataTable({
+                    data: this.analysis,
+                    pageLength: 25,
+                    order: [[5, 'desc']], // Sort by Interest Cost
+                    columns: [
+                        {
+                            data: 'Scrip'
+                        },
+                        {
+                            data: 'Total Sold Quantity',
+                            type: 'num',
+                            render: function(data, type) {
+                                if (type === 'sort' || type === 'type') {
+                                    return parseFloat(data) || 0;
+                                }
+                                return data.toLocaleString('en-NP');
+                            }
+                        },
+                        {
+                            data: 'Investment Amount',
+                            type: 'num',
+                            render: function(data, type) {
+                                if (type === 'sort' || type === 'type') {
+                                    return parseFloat(data) || 0;
+                                }
+                                return 'Rs. ' + data.toLocaleString('en-NP', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                            }
+                        },
+                        {
+                            data: 'Avg Days Held',
+                            type: 'num',
+                            render: function(data, type) {
+                                if (type === 'sort' || type === 'type') {
+                                    return parseFloat(data) || 0;
+                                }
+                                return Math.round(data) + ' days';
+                            }
+                        },
+                        {
+                            data: 'Interest Rate %',
+                            type: 'num',
+                            render: function(data, type) {
+                                if (type === 'sort' || type === 'type') {
+                                    return parseFloat(data) || 0;
+                                }
+                                return data + '%';
+                            }
+                        },
+                        {
+                            data: 'Interest Cost',
+                            type: 'num',
+                            render: function(data, type) {
+                                if (type === 'sort' || type === 'type') {
+                                    return parseFloat(data) || 0;
+                                }
+                                return 'Rs. ' + data.toLocaleString('en-NP', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                            }
+                        },
+                        {
+                            data: 'Interest % of Investment',
+                            type: 'num',
+                            render: function(data, type) {
+                                if (type === 'sort' || type === 'type') {
+                                    return parseFloat(data) || 0;
+                                }
+                                return data.toFixed(2) + '%';
+                            }
+                        },
+                        {
+                            data: 'Realized P&L',
+                            type: 'num',
+                            render: function(data, type, row) {
+                                if (type === 'sort' || type === 'type') {
+                                    return parseFloat(data) || 0;
+                                }
+                                const className = data >= 0 ? 'profit' : 'loss';
+                                return '<span class="' + className + '">Rs. ' + data.toLocaleString('en-NP', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + '</span>';
+                            }
+                        },
+                        {
+                            data: 'Net P&L (After Interest)',
+                            type: 'num',
+                            render: function(data, type, row) {
+                                if (type === 'sort' || type === 'type') {
+                                    return parseFloat(data) || 0;
+                                }
+                                const className = data >= 0 ? 'profit' : 'loss';
+                                return '<span class="' + className + '">Rs. ' + data.toLocaleString('en-NP', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + '</span>';
+                            }
+                        }
+                    ]
+                });
+            },
+
+            createCharts() {
+                // Comparison Chart - Top 15 scripts
+                const top15 = [...this.analysis].slice(0, 15);
+                const comparisonCtx = document.getElementById('comparisonChart').getContext('2d');
+
+                this.comparisonChart = new Chart(comparisonCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: top15.map(s => s.Scrip),
+                        datasets: [
+                            {
+                                label: 'Realized P&L',
+                                data: top15.map(s => s['Realized P&L']),
+                                backgroundColor: top15.map(s => s['Realized P&L'] >= 0 ? '#10B981' : '#EF4444')
+                            },
+                            {
+                                label: 'Interest Cost',
+                                data: top15.map(s => -s['Interest Cost']), // Negative to show as cost
+                                backgroundColor: '#F59E0B'
+                            },
+                            {
+                                label: 'Net P&L',
+                                data: top15.map(s => s['Net P&L (After Interest)']),
+                                backgroundColor: top15.map(s => s['Net P&L (After Interest)'] >= 0 ? '#3B82F6' : '#DC2626')
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return context.dataset.label + ': Rs. ' + Math.abs(context.parsed.y).toLocaleString('en-NP');
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                ticks: {
+                                    callback: function(value) {
+                                        return 'Rs. ' + (value / 1000).toFixed(0) + 'K';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            },
+
+            formatCurrency,
+            formatPercent,
+            formatNumber,
+            pnlClass
+        }
+    }
+</script>
+{% endblock %}
