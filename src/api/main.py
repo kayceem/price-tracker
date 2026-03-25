@@ -2,22 +2,17 @@ import os
 from contextlib import asynccontextmanager
 from http import HTTPStatus
 from fastapi import FastAPI, Request, Response
-from  dotenv import load_dotenv
-
-from database.schemas import  WhatsAppMessageSchema
-
-from services import ptb, whatsapp_message_handler, Update, check_trackers
-
-from nepse import  refresh_script_details
-
 import logging
 import asyncio
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+from src.database.schemas import WhatsAppMessageSchema
+from src.services import ptb, whatsapp_message_handler, Update, check_trackers
+from src.core.nepse import refresh_script_details
+from src.config.settings import config
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-load_dotenv()
 
 scheduler = AsyncIOScheduler()
 

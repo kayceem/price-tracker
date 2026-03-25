@@ -12,3 +12,4 @@ wheels/
 .vscode
 *.sqlite3
 csv/
+logs/

@@ -1,7 +1,7 @@
 [project]
-name = "jupyter-notebook-server"
+name = "price-tracker"
 version = "0.1.0"
-description = "Jupyter notebook server"
+description = ""
 readme = "README.md"
 requires-python = ">=3.12"
 
@@ -35,9 +35,10 @@ dependencies = [
 
 [tool.setuptools]
 packages = [
-    "server",
-    "database",
-    "nepse",
-    "services",
-    "utils"
+    "src.database",
+    "src.config",
+    "src.core",
+    "src.services",
+    "src.utils",
+
 ]

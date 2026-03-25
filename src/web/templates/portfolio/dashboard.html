@@ -13,13 +13,24 @@
     <!-- Content -->
     <div x-show="!loading" x-cloak>
         <!-- Summary Cards -->
-        <div class="grid grid-cols-3 gap-6 mb-8">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
             <!-- Total Investment -->
             <div class="stat-card bg-white rounded-lg shadow-md p-6">
                 <div class="flex items-center justify-between">
                     <div>
                         <p class="text-sm font-medium text-gray-500">Total Investment</p>
                         <p class="text-2xl font-bold text-gray-800 mt-2" x-text="formatCurrency(totals.total_investment)"></p>
+                        <p class="text-xs text-gray-500 mt-1">all transactions</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Current Investment -->
+            <div class="stat-card bg-white rounded-lg shadow-md p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-gray-500">Current Investment</p>
+                        <p class="text-2xl font-bold text-gray-800 mt-2" x-text="formatCurrency(totals.current_investment)"></p>
                         <p class="text-xs text-gray-500 mt-1" x-text="scriptCount + ' scripts'"></p>
                     </div>
                 </div>
@@ -31,7 +42,7 @@
                     <div>
                         <p class="text-sm font-medium text-gray-500">Current Value</p>
                         <p class="text-2xl font-bold text-gray-800 mt-2" x-text="formatCurrency(totals.current_value)"></p>
-                        <p class="text-xs mt-1" :class="pnlClass(totals.current_value - totals.total_investment)" x-text="formatCurrency(totals.current_value - totals.total_investment) + ' change'"></p>
+                        <p class="text-xs mt-1" :class="pnlClass(((totals.current_value - totals.current_investment) / totals.current_investment) * 100)" x-text="totals.current_investment > 0 ? formatPercent(((totals.current_value - totals.current_investment) / totals.current_investment) * 100) + ' change' : 'N/A'"></p>
                     </div>
                 </div>
             </div>

@@ -7,14 +7,9 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import List, Dict, Tuple
 from collections import defaultdict
-import os
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
-
-# Get interest rate from .env, default to 24% if not set
-INTEREST_RATE = float(os.getenv('INTEREST_RATE', '24'))
+# Import configuration
+from src.config.settings import config, INTEREST_RATE
 
 
 class Transaction:
@@ -67,9 +62,7 @@ class PortfolioAnalyzer:
 
         # Set up paths
         if csv_base_path is None:
-            from utils import get_dir_path
-            dir_path = get_dir_path()
-            self.base_dir = Path(dir_path, 'csv', username)
+            self.base_dir = config.get_user_csv_dir(username)
         else:
             self.base_dir = Path(csv_base_path)
 

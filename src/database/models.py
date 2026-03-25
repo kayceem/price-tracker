@@ -4,7 +4,7 @@ from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String
 from .session import Base, engine
 from sqlalchemy.orm import relationship
 from datetime import timezone, timedelta
-from utils import encrypt_password, decrypt_password
+from src.utils import encrypt_password, decrypt_password
 
 nepal_tz = timezone(timedelta(hours=5, minutes=45))
 
@@ -23,8 +23,6 @@ class ScriptDetails(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     script_id = Column(Integer, ForeignKey(Scripts.id), nullable=False)
-    instrument_type = Column(String, nullable=False)
-    listing_date = Column(String, nullable=False)
     last_traded_price = Column(Float, nullable=False)
     total_traded_quantity = Column(Integer, nullable=False)
     total_trades = Column(Integer, nullable=False)
@@ -33,15 +31,13 @@ class ScriptDetails(Base):
     week_52_high_low = Column(String, nullable=False)
     open_price = Column(Float, nullable=False)
     close_price = Column(Float, nullable=False)
-    total_listed_shares = Column(Integer, nullable=True)
-    total_paid_up_value = Column(Float, nullable=True)
     market_capitalization = Column(Float, nullable=True)
     created_at = Column(DateTime, default=lambda : datetime.datetime.now(nepal_tz), nullable=False)
     updated_at = Column(DateTime, default=lambda : datetime.datetime.now(nepal_tz), onupdate=lambda : datetime.datetime.now(nepal_tz), nullable=False)
 
     script = relationship("Scripts", back_populates="script_details")
     def __repr__(self):
-        return f"<ScriptDetails(Script={self.script.ticker}, listing_date={self.listing_date}, last_traded_price={self.last_traded_price}, total_traded_quantity={self.total_traded_quantity}, total_trades={self.total_trades}, previous_day_close_price={self.previous_day_close_price}, high_price_low_price={self.high_price_low_price}, week_52_high_low={self.week_52_high_low}, open_price={self.open_price}, close_price={self.close_price}, total_listed_shares={self.total_listed_shares}, total_paid_up_value={self.total_paid_up_value}, market_capitalization={self.market_capitalization})>"
+        return f"<ScriptDetails(Script={self.script.ticker})>"
 
 class User(Base):
     __tablename__ = 'user'

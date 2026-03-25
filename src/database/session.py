@@ -1,10 +1,9 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 from contextlib import contextmanager
-from utils import get_dir_path
+from src.config.settings import config
 
-DIR_PATH = get_dir_path()
-db_path = f'{DIR_PATH}/db.sqlite3'
+db_path = str(config.base_dir / 'db.sqlite3')
 CONNECTION_URI = f'sqlite+aiosqlite:///{db_path}'
 engine = create_async_engine(CONNECTION_URI, echo=False,
     pool_size=50,
