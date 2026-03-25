@@ -33,8 +33,8 @@
             </div>
         </div>
 
-        <!-- Header Summary Cards -->
-        <div class="grid gap-6 mb-8" :class="window.interestVisible ? 'grid-cols-5' : 'grid-cols-4'">
+        <!-- Header Summary Cards - Row 1 -->
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 mb-6">
             <div class="bg-white rounded-lg shadow-md p-6">
                 <p class="text-sm font-medium text-gray-500 mb-2">Current Holdings</p>
                 <p class="text-3xl font-bold text-gray-800" x-text="formatNumber(summary['Current Holdings'])"></p>
@@ -59,6 +59,20 @@
                 <p class="text-sm font-medium text-gray-500 mb-2">Net P&L</p>
                 <p class="text-2xl font-bold" :class="pnlClass(summary['Net P&L (After Interest)'])" x-text="formatCurrency(summary['Net P&L (After Interest)'])"></p>
                 <p class="text-xs" :class="pnlClass(summary['Net Return %'])" x-text="formatPercent(summary['Net Return %'])"></p>
+            </div>
+        </div>
+
+        <!-- Investment Values - Row 2 -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8" x-show="summary['Current Holdings'] > 0">
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <p class="text-sm font-medium text-gray-500 mb-2">Total Investment</p>
+                <p class="text-2xl font-bold text-gray-800" x-text="formatCurrency(summary['Current Holdings'] * summary['Avg Cost'])"></p>
+                <p class="text-xs text-gray-500 mt-1">holdings × avg cost</p>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <p class="text-sm font-medium text-gray-500 mb-2">Current Value</p>
+                <p class="text-2xl font-bold text-gray-800" x-text="currentPrice ? formatCurrency(summary['Current Holdings'] * currentPrice) : 'N/A'"></p>
+                <p class="text-xs text-gray-500 mt-1">holdings × current price</p>
             </div>
         </div>
 

@@ -2,7 +2,7 @@ from pathlib import Path
 import pandas as pd
 import time, os
 from playwright.async_api import async_playwright
-from utils.utils import get_dir_path
+from src.utils import get_dir_path
 
 class Npstocks:
     def __init__(self, username, password, headless=True):

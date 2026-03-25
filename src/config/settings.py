@@ -45,7 +45,7 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 # NEPSE Configuration
-NEPSE_CACHE_TTL = int(os.getenv("NEPSE_CACHE_TTL", "900"))  # 15 minutes
+NEPSE_CACHE_TTL = int(os.getenv("NEPSE_CACHE_TTL", "900"))
 
 class Config:
     """Application configuration class"""

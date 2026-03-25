@@ -51,9 +51,14 @@ async def get_portfolio_summary():
         wacc_data = get_wacc_data()
         summary_df = analyzer.get_portfolio_summary(current_prices, wacc_data)
 
+        # Calculate current investment (only for scripts with current holdings)
+        current_holdings_df = summary_df[summary_df['Current Holdings'] > 0]
+        current_investment = float((current_holdings_df['Current Holdings'] * current_holdings_df['Avg Cost']).sum())
+
         # Calculate totals
         totals = {
             'total_investment': float(summary_df['Total Investment'].sum()),
+            'current_investment': current_investment,
             'current_value': float(summary_df['Current Value'].sum()),
             'realized_pnl': float(summary_df['Realized P&L'].sum()),
             'unrealized_pnl': float(summary_df['Unrealized P&L'].sum()),

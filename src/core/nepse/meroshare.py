@@ -1,6 +1,7 @@
 import time, os
 from playwright.async_api import async_playwright
-from utils.utils import get_dir_path
+from src.config.settings import config
+
 
 class Meroshare:
     def __init__(self, dp, username, password, headless=False):
@@ -12,11 +13,12 @@ class Meroshare:
         self.browser = None
         self.context = None
         self.page = None
-        self.download_dir = os.path.join(get_dir_path(), "csv")
+        self.download_dir = os.path.join(config.get_user_csv_dir(self.username))
         self.urls = {
             "login": "https://meroshare.cdsc.com.np/#/login",
             "portfolio": "https://meroshare.cdsc.com.np/#/portfolio",
             "purchase_source": "https://meroshare.cdsc.com.np/#/purchase",
+            "transaction_history": "https://meroshare.cdsc.com.np/#/transaction",
         }
         
 
@@ -57,7 +59,7 @@ class Meroshare:
             await self.page.click("button >> i.msi-download-csv")
 
         download = await download_info.value
-        download_path = os.path.join(self.download_dir, self.username ,download.suggested_filename)
+        download_path = os.path.join(self.download_dir, download.suggested_filename)
         await download.save_as(download_path)
         await self.page.wait_for_timeout(2000)
 
@@ -68,13 +70,26 @@ class Meroshare:
             await self.page.click("button >> i.msi-download-csv")
 
         download = await download_info.value
-        download_path = os.path.join(self.download_dir, self.username ,download.suggested_filename)
+        download_path = os.path.join(self.download_dir, download.suggested_filename)
+        await download.save_as(download_path)
+        await self.page.wait_for_timeout(2000)
+    
+    async def fetch_transaction_csv(self):
+        await self.page.goto(self.urls["transaction_history"])
+        await self.page.wait_for_timeout(2000)
+        radio_button = await self.page.click("input#radio-range")
+        await self.page.wait_for_timeout(2000)
+        async with self.page.expect_download() as download_info:
+            await self.page.click("button >> i.msi-download-csv")
+        download = await download_info.value
+        download_path = os.path.join(self.download_dir, "history", download.suggested_filename)
         await download.save_as(download_path)
         await self.page.wait_for_timeout(2000)
 
     async def fetch_csv(self):
         await self.fetch_protfolio_csv()
         await self.fetch_wacc_csv()
+        await self.fetch_transaction_csv()
 
 
     async def start(self):
