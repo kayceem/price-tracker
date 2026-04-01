@@ -50,18 +50,121 @@ class Meroshare:
         # Implement logout logic here
         pass
 
-    async def fetch_wacc_csv(self):
-        await self.page.goto(self.urls["purchase_source"])
-        await self.page.wait_for_timeout(2000)
-        await self.page.click("a.nav-link:has-text('My WACC')")
-        await self.page.wait_for_timeout(2000)
-        async with self.page.expect_download() as download_info:
-            await self.page.click("button >> i.msi-download-csv")
+    async def calculate_holding_days(self):
+        # click holding tab
+        # <li _ngcontent-c7="" class="nav-item">
+        #     <a _ngcontent-c7="" class="nav-link">
+        #       <i _ngcontent-c7="" class="ca /myHoldings"></i>
+        #       <span _ngcontent-c7="">My Holdings</span>
+        #     </a>
+        #   </li>
+        pass
 
-        download = await download_info.value
-        download_path = os.path.join(self.download_dir, download.suggested_filename)
-        await download.save_as(download_path)
+    async def calculate_wacc(self):
+        await self.page.reload()
         await self.page.wait_for_timeout(2000)
+
+        # Get all available scripts from datalist
+        script_options = await self.page.locator("datalist#browsers option").all()
+        scripts = []
+        for option in script_options:
+            value = await option.get_attribute("value")
+            if value:
+                scripts.append(value)
+
+        print(f"Found {len(scripts)} scripts to process")
+
+        # Process each script
+        for idx, script in enumerate(scripts, 1):
+            try:
+                print(f"Processing {idx}/{len(scripts)}: {script}")
+
+                # Enter script name in input field
+                await self.page.fill("input#script", script)
+                await self.page.wait_for_timeout(500)
+
+                # Click search button
+                await self.page.click("button.btn.btn-primary[type='submit']")
+                await self.page.wait_for_timeout(1500)
+
+                # Check if any results found
+                checkboxes = await self.page.locator("input[type='checkbox']").all()
+                if not checkboxes:
+                    print(f"  No purchase records found for {script}")
+                    await self.page.click("button.btn.btn-default[type='reset']")
+                    await self.page.wait_for_timeout(500)
+                    continue
+
+                # Click all checkboxes
+                for checkbox in checkboxes:
+                    if await checkbox.is_visible():
+                        await checkbox.check()
+
+                await self.page.wait_for_timeout(500)
+
+                # Click proceed button
+                await self.page.click("button.btn.btn-primary[type='button']:has-text('Proceed')")
+                await self.page.wait_for_timeout(1500)
+
+                # Click disclaimer checkbox
+                await self.page.click("input.disclaimer[type='checkbox']")
+                await self.page.wait_for_timeout(500)
+
+                # Click update button
+                await self.page.click("button.btn.btn-primary[type='submit']:has-text('Update')")
+                await self.page.wait_for_timeout(2000)
+
+                # Check for success toast message
+                toast_container = await self.page.query_selector("div#toast-container")
+                if toast_container:
+                    toast_text = await toast_container.inner_text()
+                    if "updated" in toast_text.lower():
+                        print(f"  Successfully updated WACC for {script}")
+                    else:
+                        print(f"  Update response for {script}: {toast_text}")
+
+                # Wait for toast to disappear
+                await self.page.wait_for_timeout(1000)
+
+                # Click reset button to prepare for next script
+                await self.page.click("button.btn.btn-default[type='reset']")
+                await self.page.wait_for_timeout(500)
+
+            except Exception as e:
+                print(f"  Error processing {script}: {str(e)}")
+                # Try to reset and continue with next script
+                try:
+                    await self.page.click("button.btn.btn-default[type='reset']")
+                    await self.page.wait_for_timeout(500)
+                except:
+                    pass
+                continue
+
+        print(f"Completed WACC calculation for all scripts")
+
+    async def fetch_wacc_csv(self):
+        while True:
+            await self.page.goto(self.urls["purchase_source"])
+            await self.page.wait_for_timeout(2000)
+            await self.page.click("a.nav-link:has-text('My WACC')")
+            await self.page.wait_for_timeout(2000)
+            try:
+                async with self.page.expect_download() as download_info:
+                    await self.page.click("button >> i.msi-download-csv", timeout=5000)
+                download = await download_info.value
+                download_path = os.path.join(self.download_dir, download.suggested_filename)
+                await download.save_as(download_path)
+                await self.page.wait_for_timeout(2000)
+                break
+            except:
+                error_message = await self.page.query_selector("div.fallback-title-message")
+                if error_message and "holding" in (await error_message.inner_text()).lower():
+                    await self.calculate_holding_days()
+                    continue
+                if error_message and "wacc" in (await error_message.inner_text()).lower():
+                    await self.calculate_wacc()
+                    continue
+                break
 
     async def fetch_protfolio_csv(self):
         await self.page.goto(self.urls["portfolio"])

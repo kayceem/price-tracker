@@ -62,11 +62,11 @@ async def get_meroshare_user(username: str) -> dict:
         return meroshare_user.to_dict()
 
 
-async def initialize_meroshare(user_data: dict) -> Meroshare:
+async def initialize_meroshare(user_data: dict, headless: bool = True) -> Meroshare:
     """Initialize and start MeroShare session."""
     logger.info(f"Initializing MeroShare session for user: {user_data['username']}")
     meroshare = Meroshare(
-        headless=True,
+        headless=headless,
         dp=user_data['dp'],
         password=user_data['password'],
         username=user_data['username']
@@ -329,7 +329,7 @@ def format_excel(pnl_xlsx: Path, username: str, current_date: str):
     logger.info("Excel formatting applied successfully")
 
 
-async def main(username: str):
+async def main(username: str, headless: bool = True):
     """Main execution function."""
     logger.info("=" * 80)
     logger.info(f"Starting WACC extraction for user: {username}")
@@ -340,7 +340,7 @@ async def main(username: str):
         user_data = await get_meroshare_user(username)
 
         # Initialize MeroShare session
-        meroshare = await initialize_meroshare(user_data)
+        meroshare = await initialize_meroshare(user_data, headless=headless)
 
         # Setup directories
         wacc_csv, pnl_xlsx, pnl_pdf, current_date = setup_directories(username)
@@ -383,7 +383,11 @@ if __name__ == "__main__":
         type=str,
         help="MeroShare username"
     )
-
+    parser.add_argument(
+        "--no-headless",
+        action="store_true",
+        help="Run MeroShare session in non-headless mode (for debugging)"
+    )
     args = parser.parse_args()
 
-    asyncio.run(main(args.username))
+    asyncio.run(main(args.username, headless=not args.no_headless))
