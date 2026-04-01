@@ -13,3 +13,5 @@ wheels/
 *.sqlite3
 csv/
 logs/
+
+scripts/users
