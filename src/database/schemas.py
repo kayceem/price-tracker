@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field, field_validator
 from typing import Any, Literal, Optional, Union
+from datetime import datetime
 
 class ScriptDetailsSchema(BaseModel):
     script_id: Any
@@ -69,3 +70,57 @@ class WhatsAppMessageSchema(BaseModel):
 
     class Config:
         from_attributes = True
+
+class BrokerSchema(BaseModel):
+    member_id: str
+    name: str
+
+    class Config:
+        from_attributes = True
+
+class FloorsheetSchema(BaseModel):
+    contract_id: int = Field(..., alias="contractId")
+    stock_symbol: str = Field(..., alias="stockSymbol")
+    stock_id: int = Field(..., alias="stockId")
+    buyer_member_id: str = Field(..., alias="buyerMemberId")
+    seller_member_id: str = Field(..., alias="sellerMemberId")
+    buyer_broker_name: Optional[str] = Field(None, alias="buyerBrokerName")
+    seller_broker_name: Optional[str] = Field(None, alias="sellerBrokerName")
+    contract_quantity: int = Field(..., alias="contractQuantity")
+    contract_rate: float = Field(..., alias="contractRate")
+    contract_amount: float = Field(..., alias="contractAmount")
+    trade_book_id: int = Field(..., alias="tradeBookId")
+    trade_date: str = Field(default="", alias="tradeTime")
+    trade_time: str = Field(default="", alias="tradeTime")
+    security_name: Optional[str] = Field(None, alias="securityName")
+
+    # These will be populated during processing, not from API
+    script_id: Optional[int] = None
+    buyer_broker_id: Optional[int] = None
+    seller_broker_id: Optional[int] = None
+
+    @field_validator("trade_date", mode="before")
+    def parse_trade_date(cls, value):
+        """Extract date from ISO format datetime string"""
+        if isinstance(value, str):
+            # Handle ISO format: 2026-04-02T11:00:33.197375
+            dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
+            return dt.strftime('%Y-%m-%d')
+        return value
+
+    @field_validator("trade_time", mode="before")
+    def parse_trade_time(cls, value):
+        """Extract time from ISO format datetime string"""
+        if isinstance(value, str):
+            # Handle ISO format: 2026-04-02T11:00:33.197375
+            dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
+            return dt.strftime('%H:%M:%S.%f')
+        return value
+
+    class Config:
+        populate_by_name = True
+
+class FetchListItemSchema(BaseModel):
+    ticker: str = Field(..., description="Stock ticker symbol")
+    date: str = Field(..., description="Date in YYYY-MM-DD format")
+    force: bool = Field(default=False, description="Force refetch even if data exists")

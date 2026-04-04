@@ -8,6 +8,7 @@ from fastapi.responses import RedirectResponse
 
 from src.config.settings import config, WEB_HOST, WEB_PORT, WEB_RELOAD
 from src.api.routes.portfolio import router as portfolio_router
+from src.api.routes.floorsheet import router as floorsheet_router
 
 app = FastAPI(title="Portfolio Viewer")
 
@@ -15,8 +16,9 @@ app = FastAPI(title="Portfolio Viewer")
 app.mount("/static", StaticFiles(directory=str(config.static_dir)), name="static")
 templates = Jinja2Templates(directory=str(config.templates_dir))
 
-# Include portfolio routes
+# Include routes
 app.include_router(portfolio_router)
+app.include_router(floorsheet_router)
 
 # Template routes
 @app.get("/")
@@ -55,6 +57,10 @@ async def portfolio_reports(request: Request):
 @app.get("/portfolio/script/{symbol}")
 async def portfolio_script_detail(request: Request, symbol: str):
     return templates.TemplateResponse("portfolio/script_detail.html", {"request": request, "symbol": symbol})
+
+@app.get("/floorsheet")
+async def floorsheet_viewer(request: Request):
+    return templates.TemplateResponse("floorsheet/viewer.html", {"request": request})
 
 if __name__ == "__main__":
     import uvicorn

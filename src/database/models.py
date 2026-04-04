@@ -10,13 +10,15 @@ nepal_tz = timezone(timedelta(hours=5, minutes=45))
 
 class Scripts(Base):
     __tablename__ = 'script'
-    
+
     id = Column(Integer, primary_key=True, autoincrement=True)
-    ticker = Column(String(255), nullable=False)
+    ticker = Column(String(255), nullable=False, unique=True, index=True)
     name = Column(String(500), nullable=True)
     href = Column(String(500), nullable=False)
+    nepse_id = Column(Integer, nullable=True, unique=True, index=True)  # Stock ID from NEPSE API
     script_details = relationship("ScriptDetails", back_populates="script", uselist=False, cascade="all, delete-orphan")
     trackers = relationship("Tracker", back_populates="script", cascade="all, delete-orphan")
+    floorsheets = relationship("Floorsheet", back_populates="script", cascade="all, delete-orphan")
 
 class ScriptDetails(Base):
     __tablename__ = 'script_details'
@@ -79,7 +81,7 @@ class MeroShareUser(Base):
 
 class Tracker(Base):
     __tablename__ = 'tracker'
-    
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     script_id = Column(Integer, ForeignKey(Scripts.id), nullable=False)
     user_id = Column(Integer, ForeignKey(User.id), nullable=False)
@@ -88,12 +90,51 @@ class Tracker(Base):
     triggerd_at = Column(DateTime, nullable=True)
     alert_message_id = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=lambda : datetime.datetime.now(nepal_tz), nullable=False)
-    
+
     user = relationship("User", back_populates="trackers")
     script = relationship("Scripts", back_populates="trackers")
 
-# async def create_tables_if_not_exists():
-#         async with engine.begin() as conn:
-#             await conn.run_sync(lambda conn: Base.metadata.create_all(conn, checkfirst=True))
+class Broker(Base):
+    __tablename__ = 'broker'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    member_id = Column(String(50), nullable=False, unique=True, index=True)
+    name = Column(String(500), nullable=False)
+    created_at = Column(DateTime, default=lambda : datetime.datetime.now(nepal_tz), nullable=False)
+
+    # Relationships
+    floorsheets_as_buyer = relationship("Floorsheet", foreign_keys="Floorsheet.buyer_broker_id", back_populates="buyer_broker")
+    floorsheets_as_seller = relationship("Floorsheet", foreign_keys="Floorsheet.seller_broker_id", back_populates="seller_broker")
+
+    def __repr__(self):
+        return f"<Broker(id={self.member_id}, name={self.name})>"
+
+class Floorsheet(Base):
+    __tablename__ = 'floorsheet'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    contract_id = Column(Integer, unique=True, nullable=False, index=True)
+    script_id = Column(Integer, ForeignKey('script.id'), nullable=False, index=True)
+    buyer_broker_id = Column(Integer, ForeignKey('broker.id'), nullable=False)
+    seller_broker_id = Column(Integer, ForeignKey('broker.id'), nullable=False)
+    contract_quantity = Column(Integer, nullable=False)
+    contract_rate = Column(Float, nullable=False)
+    contract_amount = Column(Float, nullable=False)
+    trade_book_id = Column(Integer, nullable=False)
+    trade_date = Column(String(50), nullable=False, index=True)
+    trade_time = Column(String(50), nullable=False)
+    created_at = Column(DateTime, default=lambda : datetime.datetime.now(nepal_tz), nullable=False)
+
+    # Relationships
+    script = relationship("Scripts", back_populates="floorsheets")
+    buyer_broker = relationship("Broker", foreign_keys=[buyer_broker_id], back_populates="floorsheets_as_buyer")
+    seller_broker = relationship("Broker", foreign_keys=[seller_broker_id], back_populates="floorsheets_as_seller")
+
+    def __repr__(self):
+        return f"<Floorsheet(contract_id={self.contract_id}, script={self.script.ticker if self.script else 'N/A'}, date={self.trade_date})>"
+
+async def create_tables_if_not_exists():
+        async with engine.begin() as conn:
+            await conn.run_sync(lambda conn: Base.metadata.create_all(conn, checkfirst=True))
 
 # asyncio.run(create_tables_if_not_exists())
