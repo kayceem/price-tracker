@@ -76,9 +76,9 @@ async def get_floorsheet_data(
                 seller_broker.c.member_id.label('seller_member_id')
             ).join(
                 Scripts, Floorsheet.script_id == Scripts.id
-            ).join(
+            ).outerjoin(
                 buyer_broker, Floorsheet.buyer_broker_id == buyer_broker.c.id
-            ).join(
+            ).outerjoin(
                 seller_broker, Floorsheet.seller_broker_id == seller_broker.c.id
             )
 

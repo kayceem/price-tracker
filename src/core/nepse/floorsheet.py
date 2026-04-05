@@ -2,7 +2,7 @@ import argparse
 import asyncio
 import json
 import httpx
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 from sqlalchemy import select
@@ -21,6 +21,7 @@ class NepseAuthenticator:
         self.refresh_token: Optional[str] = None
         self.salt_values: list[int] = []  # Store salt1-salt5 from initial /prove
         self.original_salt_values: list[int] = []  # Keep original salts for ID calculation
+        self.market_status_id: Optional[int] = None  # dummyId from market-open API
         self.headers = {
             "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0",
             "Accept": "application/json, text/plain, */*",
@@ -42,6 +43,21 @@ class NepseAuthenticator:
         wasm_path = config.data_dir / "css.wasm"
         self.wasm_module = Module.from_file(self.wasm_store.engine, str(wasm_path))
         self.wasm_instance = Instance(self.wasm_store, self.wasm_module, [])
+
+    async def get_market_status(self, client: httpx.AsyncClient) -> bool:
+        """Get market status which includes the dummyId."""
+        try:
+            response = await client.get(
+                f"{self.base_url}/api/nots/nepse-data/market-open",
+                headers=self.get_auth_headers()
+            )
+            response.raise_for_status()
+            data = response.json()
+            self.market_status_id = data.get("id")
+            return bool(self.market_status_id is not None)
+        except Exception as e:
+            print(f"Failed to get market status: {e}")
+            return False
 
     async def authenticate(self, client: httpx.AsyncClient) -> bool:
         """Get initial access token and refresh token."""
@@ -71,6 +87,9 @@ class NepseAuthenticator:
             # Trim tokens using WebAssembly functions
             self.access_token = self._trim_access_token(self.access_token, self.salt_values)
             self.refresh_token = self._trim_refresh_token(self.refresh_token, self.salt_values)
+
+            # Get market status to obtain dummyId
+            await self.get_market_status(client)
 
             return bool(self.access_token)
         except Exception as e:
@@ -202,11 +221,13 @@ class NepseAuthenticator:
             157, 178, 631, 192, 734, 445, 192, 883, 187, 122, 591, 731, 852, 384, 565, 596, 451, 772, 624, 691
         ]
 
-        # Use current day of month
         day = datetime.now().day
 
-        # dummyId = day * 20
-        dummy_id = day * 20
+        # dummyId comes from market-open API response
+        dummy_id = self.market_status_id if self.market_status_id is not None else 1
+
+        if dummy_id >= len(dummy_data):
+            dummy_id = dummy_id % len(dummy_data)
 
         # Get dummy value from array
         dummy_data_value = dummy_data[dummy_id]
@@ -310,7 +331,6 @@ class FloorsheetFetcher:
                     )
 
             response.raise_for_status()
-
             # Check if response is empty
             if not response.text:
                 print(f"Empty response for {ticker} on {date} - market may be closed or no data available")
@@ -325,6 +345,9 @@ class FloorsheetFetcher:
     async def get_or_create_broker(self, db, member_id: str, name: str) -> int:
         """Get or create a broker and return its ID."""
         # Try to find existing broker
+        if not member_id:
+            return None
+        
         result = await db.execute(
             select(Broker).filter(Broker.member_id == member_id)
         )
@@ -378,9 +401,44 @@ class FloorsheetFetcher:
         print(f"Warning: Script {symbol} (ID: {stock_id}) not found in database")
         return None
 
-    async def save_floorsheet_data(self, floorsheet_items: list[dict]) -> tuple[int, int]:
-        """Save floorsheet data to database with broker and script relationships."""
-        saved_count = 0
+    async def get_or_update_floorsheet(
+        self,
+        db,
+        contract_id: int,
+        trade_date: str,
+        floorsheet_data: dict
+    ) -> tuple[Floorsheet, bool]:
+        """
+        Get existing floorsheet by contract_id or create new one.
+        Returns (floorsheet, is_new) tuple.
+        """
+        # Try to find existing floorsheet by contract_id
+        result = await db.execute(
+            select(Floorsheet).filter(Floorsheet.contract_id == contract_id)
+        )
+        floorsheet = result.scalars().first()
+
+        is_new = False
+        if floorsheet:
+            # Update existing record
+            for key, value in floorsheet_data.items():
+                if hasattr(floorsheet, key):
+                    setattr(floorsheet, key, value)
+        else:
+            # Create new record
+            floorsheet = Floorsheet(**floorsheet_data)
+            db.add(floorsheet)
+            is_new = True
+
+        return floorsheet, is_new
+
+    async def save_floorsheet_data(self, floorsheet_items: list[dict]) -> tuple[int, int, int]:
+        """
+        Save floorsheet data to database with broker and script relationships.
+        Returns (new_count, updated_count, skipped_count).
+        """
+        new_count = 0
+        updated_count = 0
         skipped_count = 0
 
         async with get_db() as db:
@@ -420,25 +478,36 @@ class FloorsheetFetcher:
                     floorsheet_schema.buyer_broker_id = buyer_broker_id
                     floorsheet_schema.seller_broker_id = seller_broker_id
 
-                    # Create floorsheet record (exclude the temporary fields)
+                    # Prepare floorsheet data (exclude the temporary fields)
                     floorsheet_data = floorsheet_schema.model_dump(
                         exclude={'stock_symbol', 'stock_id', 'buyer_member_id', 'seller_member_id',
                                 'buyer_broker_name', 'seller_broker_name', 'security_name'}
                     )
-                    floorsheet = Floorsheet(**floorsheet_data)
-                    db.add(floorsheet)
-                    await db.commit()
-                    saved_count += 1
 
-                except IntegrityError:
+                    # Get or update floorsheet record
+                    floorsheet, is_new = await self.get_or_update_floorsheet(
+                        db,
+                        floorsheet_schema.contract_id,
+                        floorsheet_schema.trade_date,
+                        floorsheet_data
+                    )
+
+                    await db.commit()
+                    if is_new:
+                        new_count += 1
+                    else:
+                        updated_count += 1
+
+                except IntegrityError as e:
                     await db.rollback()
+                    print(f"Duplicate record for contract ID {item.get('contractId')}: {e}")
                     skipped_count += 1
                 except Exception as e:
                     await db.rollback()
                     print(f"Error saving floorsheet record {item.get('contractId')}: {e}")
                     skipped_count += 1
 
-        return saved_count, skipped_count
+        return new_count, updated_count, skipped_count
 
     async def fetch_and_save(
         self,
@@ -462,7 +531,8 @@ class FloorsheetFetcher:
                     return {"ticker": ticker, "date": date, "status": "error", "reason": "auth_failed"}
 
             page = 0
-            total_saved = 0
+            total_new = 0
+            total_updated = 0
             total_skipped = 0
 
             while True:
@@ -477,22 +547,26 @@ class FloorsheetFetcher:
                 if not content:
                     break
 
-                saved, skipped = await self.save_floorsheet_data(content)
-                total_saved += saved
+                new, updated, skipped = await self.save_floorsheet_data(content)
+                total_new += new
+                total_updated += updated
                 total_skipped += skipped
 
-                print(f"Page {page}: Saved {saved}, Skipped {skipped} records for {ticker} on {date}")
+                print(f"Page {page}: New {new}, Updated {updated}, Skipped {skipped} records for {ticker} on {date}")
 
                 if floorsheet_data.get("last", True):
                     break
 
                 page += 1
 
-            print(f"Total for {ticker} on {date}: Saved {total_saved}, Skipped {total_skipped}")
+            total_saved = total_new + total_updated
+            print(f"Total for {ticker} on {date}: New {total_new}, Updated {total_updated}, Skipped {total_skipped}")
             return {
                 "ticker": ticker,
                 "date": date,
                 "status": "success",
+                "new": total_new,
+                "updated": total_updated,
                 "saved": total_saved,
                 "skipped": total_skipped
             }

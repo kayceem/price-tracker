@@ -266,6 +266,36 @@ async def get_portfolio_stats():
         # Sort by distance (closest to 52 week high = highest percentage, which is least negative)
         close_to_high = sorted(close_to_high, key=lambda x: x['Distance from High %'], reverse=True)[:10]
 
+        # Close to 52 Week Low - calculate distance from 52 week low for current holdings
+        close_to_low = []
+        for _, script in summary_df.iterrows():
+            try:
+                # Check if all required values are present and valid
+                if (script['Current Holdings'] > 0 and
+                    pd.notna(script['52 Week Low']) and
+                    pd.notna(script['Current Price']) and
+                    script['52 Week Low'] != 0 and
+                    script['Current Price'] != 0):
+
+                    current_price = float(script['Current Price'])
+                    week_52_low = float(script['52 Week Low'])
+                    distance_pct = ((current_price - week_52_low) / week_52_low) * 100
+
+                    # Skip if distance is NaN or infinite
+                    if pd.notna(distance_pct) and not math.isinf(distance_pct):
+                        close_to_low.append({
+                            'Scrip': script['Scrip'],
+                            'Current Price': current_price,
+                            '52 Week Low': week_52_low,
+                            'Distance from Low %': round(distance_pct, 2)
+                        })
+            except (ValueError, TypeError, ZeroDivisionError):
+                # Skip scripts with invalid data
+                continue
+
+        # Sort by distance (closest to 52 week low = lowest percentage, which is closest to 0)
+        close_to_low = sorted(close_to_low, key=lambda x: x['Distance from Low %'])[:10]
+
         # Transaction type breakdown
         type_counts = trans_df['Type'].value_counts().to_dict()
 
@@ -280,7 +310,8 @@ async def get_portfolio_stats():
             'transaction_breakdown': type_counts,
             'top_performers': top_5,
             'bottom_performers': bottom_5,
-            'close_to_52week_high': close_to_high
+            'close_to_52week_high': close_to_high,
+            'close_to_52week_low': close_to_low
         }
 
         return JSONResponse(stats)

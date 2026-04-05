@@ -42,7 +42,7 @@
             <!-- View Link -->
             <div class="flex items-end">
                 <a
-                    :href="'https://nepsealpha.com/trading/company/' + selectedTicker"
+                    :href="'https://nepsealpha.com/search?q=' + selectedTicker"
                     target="_blank"
                     rel="noopener noreferrer"
                     x-show="selectedTicker"
@@ -87,6 +87,58 @@
                 No floorsheet data available for the selected filters.
             </div>
 
+            <!-- Pagination Controls -->
+            <div x-show="floorsheetData.length > 0" class="mb-4 px-6 py-3 bg-gray-50 border-b border-gray-200">
+                <div class="flex items-center justify-between">
+                    <!-- Items per page selector -->
+                    <div class="flex items-center gap-2">
+                        <label class="text-sm text-gray-700">Items per page:</label>
+                        <select
+                            x-model.number="floorsheetItemsPerPage"
+                            @change="floorsheetCurrentPage = 1"
+                            class="px-3 py-1 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        >
+                            <option value="25">25</option>
+                            <option value="50">50</option>
+                            <option value="100" selected>100</option>
+                            <option value="200">200</option>
+                            <option value="500">500</option>
+                        </select>
+                    </div>
+
+                    <!-- Total count -->
+                    <div class="text-sm text-gray-700">
+                        Showing <span class="font-semibold" x-text="getFloorsheetPaginationStart()"></span> to
+                        <span class="font-semibold" x-text="getFloorsheetPaginationEnd()"></span> of
+                        <span class="font-semibold" x-text="getSortedFloorsheetData().length"></span> records
+                    </div>
+
+                    <!-- Page navigation -->
+                    <div class="flex items-center gap-2">
+                        <button
+                            @click="floorsheetCurrentPage--"
+                            :disabled="floorsheetCurrentPage === 1"
+                            :class="floorsheetCurrentPage === 1 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-200'"
+                            class="px-3 py-1 border border-gray-300 rounded-lg text-sm bg-white transition"
+                        >
+                            Previous
+                        </button>
+                        <span class="text-sm text-gray-700">
+                            Page <span class="font-semibold" x-text="floorsheetCurrentPage"></span> of
+                            <span class="font-semibold" x-text="getFloorsheetTotalPages()"></span>
+                        </span>
+                        <button
+                            @click="floorsheetCurrentPage++"
+                            :disabled="floorsheetCurrentPage >= getFloorsheetTotalPages()"
+                            :class="floorsheetCurrentPage >= getFloorsheetTotalPages() ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-200'"
+                            class="px-3 py-1 border border-gray-300 rounded-lg text-sm bg-white transition"
+                        >
+                            Next
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <div x-show="floorsheetData.length > 0" class="overflow-x-auto">
                 <table class="min-w-full divide-y divide-gray-200">
                     <thead class="bg-gray-50">
@@ -122,7 +174,7 @@
                         </tr>
                     </thead>
                     <tbody class="bg-white divide-y divide-gray-200">
-                        <template x-for="row in getSortedFloorsheetData()" :key="row.contract_id">
+                        <template x-for="row in getPaginatedFloorsheetData()" :key="row.contract_id">
                             <tr class="hover:bg-gray-50">
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="row.contract_id"></td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="row.buyer_member_id"></td>
@@ -135,11 +187,6 @@
                         </template>
                     </tbody>
                 </table>
-            </div>
-
-            <!-- Total Count -->
-            <div x-show="floorsheetData.length > 0" class="mt-4 px-6 py-3 bg-gray-50 border-t border-gray-200 text-sm text-gray-700">
-                Total Records: <span class="font-semibold" x-text="floorsheetData.length"></span>
             </div>
         </div>
 
@@ -169,6 +216,58 @@
                 </div>
             </div>
 
+            <!-- Pagination Controls for Summary -->
+            <div x-show="summaryData.length > 0" class="mb-4 px-6 py-3 bg-gray-50 border-b border-gray-200">
+                <div class="flex items-center justify-between">
+                    <!-- Items per page selector -->
+                    <div class="flex items-center gap-2">
+                        <label class="text-sm text-gray-700">Items per page:</label>
+                        <select
+                            x-model.number="summaryItemsPerPage"
+                            @change="summaryCurrentPage = 1"
+                            class="px-3 py-1 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        >
+                            <option value="25">25</option>
+                            <option value="50">50</option>
+                            <option value="100" selected>100</option>
+                            <option value="200">200</option>
+                            <option value="500">500</option>
+                        </select>
+                    </div>
+
+                    <!-- Total count -->
+                    <div class="text-sm text-gray-700">
+                        Showing <span class="font-semibold" x-text="getSummaryPaginationStart()"></span> to
+                        <span class="font-semibold" x-text="getSummaryPaginationEnd()"></span> of
+                        <span class="font-semibold" x-text="getSortedSummaryData().length"></span> records
+                    </div>
+
+                    <!-- Page navigation -->
+                    <div class="flex items-center gap-2">
+                        <button
+                            @click="summaryCurrentPage--"
+                            :disabled="summaryCurrentPage === 1"
+                            :class="summaryCurrentPage === 1 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-200'"
+                            class="px-3 py-1 border border-gray-300 rounded-lg text-sm bg-white transition"
+                        >
+                            Previous
+                        </button>
+                        <span class="text-sm text-gray-700">
+                            Page <span class="font-semibold" x-text="summaryCurrentPage"></span> of
+                            <span class="font-semibold" x-text="getSummaryTotalPages()"></span>
+                        </span>
+                        <button
+                            @click="summaryCurrentPage++"
+                            :disabled="summaryCurrentPage >= getSummaryTotalPages()"
+                            :class="summaryCurrentPage >= getSummaryTotalPages() ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-200'"
+                            class="px-3 py-1 border border-gray-300 rounded-lg text-sm bg-white transition"
+                        >
+                            Next
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <!-- Summary Table -->
             <div x-show="summaryData.length > 0" class="overflow-x-auto">
                 <table class="min-w-full divide-y divide-gray-200">
@@ -181,10 +280,6 @@
                             <th @click="sortSummary('broker_id')" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100">
                                 Broker ID
                                 <span x-show="summarySort.column === 'broker_id'" x-text="summarySort.direction === 'asc' ? '↑' : '↓'"></span>
-                            </th>
-                            <th @click="sortSummary('broker_name')" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100">
-                                Broker Name
-                                <span x-show="summarySort.column === 'broker_name'" x-text="summarySort.direction === 'asc' ? '↑' : '↓'"></span>
                             </th>
                             <th @click="sortSummary('quantity')" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100">
                                 Total Quantity
@@ -209,11 +304,10 @@
                         </tr>
                     </thead>
                     <tbody class="bg-white divide-y divide-gray-200">
-                        <template x-for="(row, index) in getSortedSummaryData()" :key="index">
+                        <template x-for="(row, index) in getPaginatedSummaryData()" :key="index">
                             <tr class="hover:bg-gray-50">
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="formatTime(row.start_time)"></td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="row.broker_id"></td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="row.broker_name"></td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="formatNumber(row.quantity)"></td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="formatPercent(row.percentage)"></td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="row.trades"></td>
@@ -261,6 +355,12 @@ function floorsheetViewer() {
             column: 'start_time',
             direction: 'asc'
         },
+
+        // Pagination state
+        floorsheetItemsPerPage: 100,
+        floorsheetCurrentPage: 1,
+        summaryItemsPerPage: 100,
+        summaryCurrentPage: 1,
 
         // Initialize
         async init() {
@@ -454,6 +554,48 @@ function floorsheetViewer() {
                 return parts[0] + '.' + parts[1].substring(0, 3);
             }
             return value;
+        },
+
+        // Floorsheet pagination methods
+        getPaginatedFloorsheetData() {
+            const sorted = this.getSortedFloorsheetData();
+            const start = (this.floorsheetCurrentPage - 1) * this.floorsheetItemsPerPage;
+            const end = start + this.floorsheetItemsPerPage;
+            return sorted.slice(start, end);
+        },
+
+        getFloorsheetTotalPages() {
+            return Math.ceil(this.getSortedFloorsheetData().length / this.floorsheetItemsPerPage) || 1;
+        },
+
+        getFloorsheetPaginationStart() {
+            return ((this.floorsheetCurrentPage - 1) * this.floorsheetItemsPerPage) + 1;
+        },
+
+        getFloorsheetPaginationEnd() {
+            const end = this.floorsheetCurrentPage * this.floorsheetItemsPerPage;
+            return Math.min(end, this.getSortedFloorsheetData().length);
+        },
+
+        // Summary pagination methods
+        getPaginatedSummaryData() {
+            const sorted = this.getSortedSummaryData();
+            const start = (this.summaryCurrentPage - 1) * this.summaryItemsPerPage;
+            const end = start + this.summaryItemsPerPage;
+            return sorted.slice(start, end);
+        },
+
+        getSummaryTotalPages() {
+            return Math.ceil(this.getSortedSummaryData().length / this.summaryItemsPerPage) || 1;
+        },
+
+        getSummaryPaginationStart() {
+            return ((this.summaryCurrentPage - 1) * this.summaryItemsPerPage) + 1;
+        },
+
+        getSummaryPaginationEnd() {
+            const end = this.summaryCurrentPage * this.summaryItemsPerPage;
+            return Math.min(end, this.getSortedSummaryData().length);
         }
     }
 }

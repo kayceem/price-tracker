@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import sqlalchemy
 from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String
 from .session import Base, engine
 from sqlalchemy.orm import relationship
@@ -111,12 +112,16 @@ class Broker(Base):
 
 class Floorsheet(Base):
     __tablename__ = 'floorsheet'
+    __table_args__ = (
+        # Unique constraint on contract_id + trade_date combination
+        sqlalchemy.UniqueConstraint('contract_id', 'trade_date', name='uq_contract_trade_date'),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    contract_id = Column(Integer, unique=True, nullable=False, index=True)
+    contract_id = Column(Integer, nullable=False, index=True)
     script_id = Column(Integer, ForeignKey('script.id'), nullable=False, index=True)
-    buyer_broker_id = Column(Integer, ForeignKey('broker.id'), nullable=False)
-    seller_broker_id = Column(Integer, ForeignKey('broker.id'), nullable=False)
+    buyer_broker_id = Column(Integer, ForeignKey('broker.id'), nullable=True)
+    seller_broker_id = Column(Integer, ForeignKey('broker.id'), nullable=True)
     contract_quantity = Column(Integer, nullable=False)
     contract_rate = Column(Float, nullable=False)
     contract_amount = Column(Float, nullable=False)
