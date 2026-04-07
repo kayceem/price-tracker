@@ -194,6 +194,8 @@ class TradeBookFetcher:
         to_date = datetime.now().strftime("%Y-%m-%d")
         size = 500
         endpoint = f"https://{self.host}/tmsapi/orderTradeApi/tradebook-history/client/2156970?fromDate={from_date}&toDate={to_date}&pageSize={size}&pageNo=1"
+        print(endpoint)
+        input()
         response = requests.get(endpoint, headers=headers)
         if response.status_code == 200:
             return response.json()

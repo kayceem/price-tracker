@@ -8,7 +8,7 @@ import pandas as pd
 import math
 from typing import Dict, Optional
 
-from src.core.portfolio.analyzer import PortfolioAnalyzer
+from src.core.portfolio.analyzer import PortfolioAnalyzer, get_current_prices_from_db, get_wacc_data_from_db
 from src.config.settings import config
 
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
@@ -16,31 +16,14 @@ router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 # Initialize analyzer
 analyzer = PortfolioAnalyzer(config.username)
 
-# Load current prices and wacc data from Wacc Rates
+# Use database functions for prices
 def get_current_prices() -> Dict[str, float]:
-    """Load current prices from Wacc Rates CSV"""
-    current_prices = {}
-    wacc_path = Path(analyzer.base_dir, 'Wacc Rates.csv')
-    if wacc_path.exists():
-        wacc_df = pd.read_csv(wacc_path)
-        for _, row in wacc_df.iterrows():
-            if pd.notna(row.get('LTP')):
-                current_prices[row['Scrip']] = float(row['LTP'])
-    return current_prices
+    """Load current prices from database"""
+    return get_current_prices_from_db()
 
 def get_wacc_data() -> Dict[str, Dict]:
-    """Load wacc data including 52-week high/low from Wacc Rates CSV"""
-    wacc_data = {}
-    wacc_path = Path(analyzer.base_dir, 'Wacc Rates.csv')
-    if wacc_path.exists():
-        wacc_df = pd.read_csv(wacc_path)
-        for _, row in wacc_df.iterrows():
-            scrip = row['Scrip']
-            wacc_data[scrip] = {
-                'High': float(row['High']) if pd.notna(row.get('High')) else None,
-                'Low': float(row['Low']) if pd.notna(row.get('Low')) else None
-            }
-    return wacc_data
+    """Load wacc data including 52-week high/low from database"""
+    return get_wacc_data_from_db()
 
 
 @router.get("/summary")
@@ -90,8 +73,8 @@ async def get_current_holdings():
         holdings_df = analyzer.get_current_holdings_summary(current_prices)
 
         # Convert date columns to string
-        if 'Earliest Purchase' in holdings_df.columns:
-            holdings_df['Earliest Purchase'] = holdings_df['Earliest Purchase'].astype(str)
+        if 'First Purchase' in holdings_df.columns:
+            holdings_df['First Purchase'] = holdings_df['First Purchase'].astype(str)
 
         holdings_df = holdings_df.fillna(0)
 
@@ -119,18 +102,21 @@ async def get_transaction_history():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/lots")
-async def get_detailed_lots():
-    """Get detailed holdings by lot"""
+@router.get("/pools")
+async def get_detailed_pools():
+    """Get detailed holdings by pool (weighted average cost)"""
     try:
         current_prices = get_current_prices()
-        lots_df = analyzer.get_detailed_lots(current_prices)
-        lots_df['Purchase Date'] = lots_df['Purchase Date'].astype(str)
-        lots_df = lots_df.fillna(0)
+        pools_df = analyzer.get_detailed_pools(current_prices)
+        if 'First Purchase Date' in pools_df.columns:
+            pools_df['First Purchase Date'] = pools_df['First Purchase Date'].astype(str)
+        if 'Last Purchase Date' in pools_df.columns:
+            pools_df['Last Purchase Date'] = pools_df['Last Purchase Date'].astype(str)
+        pools_df = pools_df.fillna(0)
 
         return JSONResponse({
-            'lots': lots_df.to_dict('records'),
-            'count': len(lots_df)
+            'pools': pools_df.to_dict('records'),
+            'count': len(pools_df)
         })
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -199,19 +185,22 @@ async def get_script_detail(symbol: str):
         script_trans = trans_df[trans_df['Scrip'] == symbol].copy()
         script_trans['Date'] = script_trans['Date'].astype(str)
 
-        # Current lots for this script
-        lots_df = analyzer.get_detailed_lots(current_prices)
-        script_lots = lots_df[lots_df['Scrip'] == symbol].copy()
-        script_lots['Purchase Date'] = script_lots['Purchase Date'].astype(str)
+        # Current pool for this script
+        pools_df = analyzer.get_detailed_pools(current_prices)
+        script_pool = pools_df[pools_df['Scrip'] == symbol].copy()
+        if 'First Purchase Date' in script_pool.columns:
+            script_pool['First Purchase Date'] = script_pool['First Purchase Date'].astype(str)
+        if 'Last Purchase Date' in script_pool.columns:
+            script_pool['Last Purchase Date'] = script_pool['Last Purchase Date'].astype(str)
 
         script_summary = script_summary.fillna(0)
         script_trans = script_trans.fillna('')
-        script_lots = script_lots.fillna(0)
+        script_pool = script_pool.fillna(0)
 
         return JSONResponse({
             'summary': script_summary.to_dict('records')[0],
             'transactions': script_trans.to_dict('records'),
-            'lots': script_lots.to_dict('records'),
+            'pool': script_pool.to_dict('records')[0] if len(script_pool) > 0 else None,
             'current_price': current_prices.get(symbol, 0)
         })
     except HTTPException:
@@ -327,18 +316,24 @@ async def export_report(report_type: str):
             'summary': 'portfolio_summary.csv',
             'holdings': 'current_holdings.csv',
             'transactions': 'transaction_history.csv',
-            'lots': 'detailed_holdings_lots.csv',
+            'pools': 'detailed_holdings_pools.csv',
             'interest': 'interest_analysis.csv'
         }
 
         if report_type not in file_mapping:
             raise HTTPException(status_code=400, detail="Invalid report type")
 
-        file_path = Path(analyzer.base_dir, file_mapping[report_type])
+        # Check in reports directory first, then base directory
+        reports_dir = Path(analyzer.base_dir, 'reports')
+        file_path = Path(reports_dir, file_mapping[report_type])
+
+        if not file_path.exists():
+            file_path = Path(analyzer.base_dir, file_mapping[report_type])
 
         if not file_path.exists():
             # Generate reports if they don't exist
             analyzer.generate_reports()
+            file_path = Path(reports_dir, file_mapping[report_type])
 
         return FileResponse(
             path=file_path,

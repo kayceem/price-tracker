@@ -578,6 +578,7 @@ class FloorsheetFetcher:
         for item in fetch_list:
             try:
                 fetch_item = FetchListItemSchema(**item)
+                
                 result = await self.fetch_and_save(
                         fetch_item.ticker,
                         fetch_item.date,

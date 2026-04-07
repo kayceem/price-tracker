@@ -72,7 +72,7 @@
                             <th>Current Value</th>
                             <th>Unrealized P&L</th>
                             <th>P&L Percent</th>
-                            <th>Avg Days Held</th>
+                            <th>Days Held</th>
                             <th>Interest Cost</th>
                             <th>Net P&L</th>
                         </tr>
@@ -88,7 +88,7 @@
                                 <td class="number-cell" x-text="holding['Current Value'] ? formatCurrency(holding['Current Value']) : 'N/A'"></td>
                                 <td class="number-cell" :class="pnlClass(holding['Unrealized P&L'])" x-text="holding['Unrealized P&L'] !== null ? formatCurrency(holding['Unrealized P&L']) : 'N/A'"></td>
                                 <td class="number-cell" :class="pnlClass(holding['Unrealized P&L %'])" x-text="holding['Unrealized P&L %'] !== null ? formatPercent(holding['Unrealized P&L %']) : 'N/A'"></td>
-                                <td class="number-cell" x-text="formatNumber(holding['Avg Days Held']) + ' days'"></td>
+                                <td class="number-cell" x-text="formatNumber(holding['Days Held']) + ' days'"></td>
                                 <td class="number-cell text-orange-600" x-text="formatCurrency(holding['Interest Cost'])"></td>
                                 <td class="number-cell" :class="pnlClass(holding['Unrealized P&L'] - holding['Interest Cost'])" x-text="formatCurrency((holding['Unrealized P&L'] || 0) - (holding['Interest Cost'] || 0))"></td>
                             </tr>

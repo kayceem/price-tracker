@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+
+{% block title %}Holdings Pools - Portfolio Viewer{% endblock %}
+{% block page_title %}Holdings Pools (Weighted Average Cost){% endblock %}
+
+{% block content %}
+<div x-data="poolsData()" x-init="init()">
+    <!-- Loading State -->
+    <div x-show="loading" class="flex justify-center items-center h-96">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <!-- Content -->
+    <div x-show="!loading" x-cloak>
+
+        <!-- Info Banner -->
+        <div class="bg-blue-50 border-l-4 border-blue-500 p-4 mb-6">
+            <div class="flex">
+                <div class="flex-shrink-0">
+                    <svg class="h-5 w-5 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+                    </svg>
+                </div>
+                <div class="ml-3">
+                    <p class="text-sm text-blue-700">
+                        <strong>Weighted Average Cost (WAC) Method:</strong> All purchases of the same stock are pooled together with a weighted average cost. When you sell, shares are removed from the pool at the average cost.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Summary Stats -->
+        <div class="grid grid-cols-3 gap-6 mb-8">
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <p class="text-sm font-medium text-gray-500 mb-2">Total Pools</p>
+                <p class="text-3xl font-bold text-gray-800" x-text="pools.length"></p>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <p class="text-sm font-medium text-gray-500 mb-2">Oldest First Purchase</p>
+                <p class="text-xl font-bold text-gray-800" x-text="oldestPurchase"></p>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <p class="text-sm font-medium text-gray-500 mb-2">Newest Purchase</p>
+                <p class="text-xl font-bold text-gray-800" x-text="newestPurchase"></p>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">Filters & Sort</h3>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Search Scrip</label>
+                    <input type="text" x-model="filters.scrip" @input="applyFilters()" placeholder="Search by scrip..." class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Sort By</label>
+                    <select x-model="sortBy" @change="applySort()" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <option value="scrip">Scrip Name</option>
+                        <option value="value">Current Value</option>
+                        <option value="pnl">Unrealized P&L</option>
+                        <option value="days">Days Held</option>
+                        <option value="cost">Total Cost</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pools Table -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-xl font-semibold text-gray-800">Holdings Pools</h3>
+                <button @click="exportToCSV()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+                    Export to CSV
+                </button>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead class="bg-gray-100">
+                        <tr class="text-left">
+                            <th class="px-6 py-3 text-sm font-semibold text-gray-700">Scrip</th>
+                            <th class="px-6 py-3 text-sm font-semibold text-gray-700">First Purchase</th>
+                            <th class="px-6 py-3 text-sm font-semibold text-gray-700">Last Purchase</th>
+                            <th class="px-6 py-3 text-sm font-semibold text-gray-700 text-right">Quantity</th>
+                            <th class="px-6 py-3 text-sm font-semibold text-gray-700 text-right">Avg Price</th>
+                            <th class="px-6 py-3 text-sm font-semibold text-gray-700 text-right">Total Cost</th>
+                            <th class="px-6 py-3 text-sm font-semibold text-gray-700 text-right">Days Held</th>
+                            <th class="px-6 py-3 text-sm font-semibold text-gray-700 text-right interest-related">Interest Cost</th>
+                            <th class="px-6 py-3 text-sm font-semibold text-gray-700 text-right">Current Value</th>
+                            <th class="px-6 py-3 text-sm font-semibold text-gray-700 text-right">Unrealized P&L</th>
+                            <th class="px-6 py-3 text-sm font-semibold text-gray-700 text-right interest-related">Net P&L</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="(pool, index) in filteredPools" :key="index">
+                            <tr class="border-t border-gray-200 hover:bg-gray-50 cursor-pointer"
+                                @click="window.location.href = `/portfolio/script/${pool.Scrip}`">
+                                <td class="px-6 py-4 text-sm font-semibold text-blue-600" x-text="pool.Scrip"></td>
+                                <td class="px-6 py-4 text-sm" x-text="formatDate(pool['First Purchase Date'])"></td>
+                                <td class="px-6 py-4 text-sm" x-text="formatDate(pool['Last Purchase Date'])"></td>
+                                <td class="px-6 py-4 text-sm number-cell" x-text="formatNumber(pool.Quantity)"></td>
+                                <td class="px-6 py-4 text-sm number-cell" x-text="formatCurrency(pool['Avg Purchase Price'])"></td>
+                                <td class="px-6 py-4 text-sm number-cell" x-text="formatCurrency(pool['Total Cost Basis'])"></td>
+                                <td class="px-6 py-4 text-sm number-cell" x-text="pool['Days Held'] + ' days'"></td>
+                                <td class="px-6 py-4 text-sm number-cell text-orange-600 interest-related" x-text="formatCurrency(pool['Interest Cost'])"></td>
+                                <td class="px-6 py-4 text-sm number-cell" x-text="pool['Current Value'] ? formatCurrency(pool['Current Value']) : 'N/A'"></td>
+                                <td class="px-6 py-4 text-sm number-cell font-semibold" :class="pnlClass(pool['Unrealized P&L'])" x-text="pool['Unrealized P&L'] !== null ? formatCurrency(pool['Unrealized P&L']) : 'N/A'"></td>
+                                <td class="px-6 py-4 text-sm number-cell font-semibold interest-related" :class="pnlClass(pool['Net P&L (After Interest)'])" x-text="pool['Net P&L (After Interest)'] !== null ? formatCurrency(pool['Net P&L (After Interest)']) : 'N/A'"></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Holding Period Distribution -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">Holding Period Distribution</h3>
+            <div class="h-80">
+                <canvas id="ageChart"></canvas>
+            </div>
+            <p class="text-sm text-gray-600 mt-4">
+                This chart shows the holding period (days held) distribution across your portfolio pools.
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    function poolsData() {
+        return {
+            loading: true,
+            pools: [],
+            filteredPools: [],
+            filters: {
+                scrip: ''
+            },
+            sortBy: 'scrip',
+            ageChart: null,
+
+            get oldestPurchase() {
+                if (this.pools.length === 0) return 'N/A';
+                const oldest = this.pools.reduce((min, pool) =>
+                    new Date(pool['First Purchase Date']) < new Date(min['First Purchase Date']) ? pool : min
+                );
+                return this.formatDate(oldest['First Purchase Date']);
+            },
+            get newestPurchase() {
+                if (this.pools.length === 0) return 'N/A';
+                const newest = this.pools.reduce((max, pool) =>
+                    new Date(pool['Last Purchase Date']) > new Date(max['Last Purchase Date']) ? pool : max
+                );
+                return this.formatDate(newest['Last Purchase Date']);
+            },
+
+            async init() {
+                await this.loadData();
+                this.$nextTick(() => {
+                    this.applyFilters();
+                    this.createChart();
+                });
+            },
+
+            async loadData() {
+                try {
+                    const response = await fetch('/api/portfolio/pools');
+                    const data = await response.json();
+                    this.pools = data.pools;
+                    this.loading = false;
+                } catch (error) {
+                    console.error('Error loading pools:', error);
+                    this.loading = false;
+                }
+            },
+
+            applyFilters() {
+                this.filteredPools = this.pools.filter(pool => {
+                    if (this.filters.scrip && !pool.Scrip.toLowerCase().includes(this.filters.scrip.toLowerCase())) {
+                        return false;
+                    }
+                    return true;
+                });
+                this.applySort();
+            },
+
+            applySort() {
+                switch(this.sortBy) {
+                    case 'scrip':
+                        this.filteredPools.sort((a, b) => a.Scrip.localeCompare(b.Scrip));
+                        break;
+                    case 'value':
+                        this.filteredPools.sort((a, b) => (b['Current Value'] || 0) - (a['Current Value'] || 0));
+                        break;
+                    case 'pnl':
+                        this.filteredPools.sort((a, b) => (b['Unrealized P&L'] || 0) - (a['Unrealized P&L'] || 0));
+                        break;
+                    case 'days':
+                        this.filteredPools.sort((a, b) => b['Days Held'] - a['Days Held']);
+                        break;
+                    case 'cost':
+                        this.filteredPools.sort((a, b) => b['Total Cost Basis'] - a['Total Cost Basis']);
+                        break;
+                }
+            },
+
+            createChart() {
+                // Group pools by holding period ranges
+                const ageRanges = {
+                    '0-3 months': 0,
+                    '3-6 months': 0,
+                    '6-12 months': 0,
+                    '1-2 years': 0,
+                    '2+ years': 0
+                };
+
+                this.pools.forEach(pool => {
+                    const days = pool['Days Held'];
+                    if (days <= 90) ageRanges['0-3 months']++;
+                    else if (days <= 180) ageRanges['3-6 months']++;
+                    else if (days <= 365) ageRanges['6-12 months']++;
+                    else if (days <= 730) ageRanges['1-2 years']++;
+                    else ageRanges['2+ years']++;
+                });
+
+                const ctx = document.getElementById('ageChart').getContext('2d');
+                this.ageChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: Object.keys(ageRanges),
+                        datasets: [{
+                            label: 'Number of Pools',
+                            data: Object.values(ageRanges),
+                            backgroundColor: ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6']
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    stepSize: 1
+                                }
+                            }
+                        }
+                    }
+                });
+            },
+
+            formatDate(dateStr) {
+                if (!dateStr || dateStr === '0') return 'N/A';
+                const date = new Date(dateStr);
+                return date.toLocaleDateString('en-NP', { year: 'numeric', month: 'short', day: '2-digit' });
+            },
+
+            exportToCSV() {
+                window.location.href = '/api/portfolio/export/pools';
+            },
+
+            formatCurrency,
+            formatNumber,
+            pnlClass
+        }
+    }
+</script>
+{% endblock %}

@@ -38,9 +38,9 @@ async def portfolio_holdings(request: Request):
 async def portfolio_transactions(request: Request):
     return templates.TemplateResponse("portfolio/transactions.html", {"request": request})
 
-@app.get("/portfolio/lots")
-async def portfolio_lots(request: Request):
-    return templates.TemplateResponse("portfolio/lots.html", {"request": request})
+@app.get("/portfolio/pools")
+async def portfolio_pools(request: Request):
+    return templates.TemplateResponse("portfolio/pools.html", {"request": request})
 
 @app.get("/portfolio/interest")
 async def portfolio_interest(request: Request):

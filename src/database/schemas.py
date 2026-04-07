@@ -122,5 +122,6 @@ class FloorsheetSchema(BaseModel):
 
 class FetchListItemSchema(BaseModel):
     ticker: str = Field(..., description="Stock ticker symbol")
-    date: str = Field(..., description="Date in YYYY-MM-DD format")
+    # add default values for date and force to make them optional in the input
+    date: str = Field(default=datetime.now().strftime('%Y-%m-%d'), description="Date in YYYY-MM-DD format")
     force: bool = Field(default=False, description="Force refetch even if data exists")
