@@ -37,10 +37,19 @@ class NepseAuthenticator:
             "Sec-Fetch-Site": "same-origin",
             "TE": "trailers",
         }
+        self._setup_wasm()
 
-        # Load WebAssembly module for token trimming
-        self.wasm_store = Store()
+    def _setup_wasm(self):
         wasm_path = config.data_dir / "css.wasm"
+        if not wasm_path.exists():
+            with httpx.Client(timeout=30.0, verify=False) as client:
+                response = client.get(
+                    f"{self.base_url}/assets/prod/css.wasm",
+                    headers=self.headers
+                )
+                response.raise_for_status()
+                wasm_path.write_bytes(response.content)
+        self.wasm_store = Store()
         self.wasm_module = Module.from_file(self.wasm_store.engine, str(wasm_path))
         self.wasm_instance = Instance(self.wasm_store, self.wasm_module, [])
 
