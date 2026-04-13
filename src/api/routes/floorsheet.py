@@ -73,7 +73,9 @@ async def get_floorsheet_data(
                 Floorsheet,
                 Scripts.ticker.label('stock_symbol'),
                 buyer_broker.c.member_id.label('buyer_member_id'),
-                seller_broker.c.member_id.label('seller_member_id')
+                seller_broker.c.member_id.label('seller_member_id'),
+                buyer_broker.c.name.label('buyer_broker_name'),
+                seller_broker.c.name.label('seller_broker_name')
             ).join(
                 Scripts, Floorsheet.script_id == Scripts.id
             ).outerjoin(
@@ -106,6 +108,8 @@ async def get_floorsheet_data(
                     'stock_symbol': row.stock_symbol,
                     'buyer_member_id': row.buyer_member_id,
                     'seller_member_id': row.seller_member_id,
+                    'buyer_broker_name': row.buyer_broker_name,
+                    'seller_broker_name': row.seller_broker_name,
                     'contract_quantity': row.Floorsheet.contract_quantity,
                     'contract_rate': row.Floorsheet.contract_rate,
                     'contract_amount': row.Floorsheet.contract_amount,

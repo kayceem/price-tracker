@@ -78,6 +78,27 @@
                 >
                     Consecutive Buyer Summary
                 </button>
+                <button
+                    @click="activeTab = 'buyer_side'"
+                    :class="activeTab === 'buyer_side' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+                    class="py-4 px-1 border-b-2 font-medium text-sm transition"
+                >
+                    Buyer Side
+                </button>
+                <button
+                    @click="activeTab = 'seller_side'"
+                    :class="activeTab === 'seller_side' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+                    class="py-4 px-1 border-b-2 font-medium text-sm transition"
+                >
+                    Seller Side
+                </button>
+                <button
+                    @click="activeTab = 'price_switch'"
+                    :class="activeTab === 'price_switch' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+                    class="py-4 px-1 border-b-2 font-medium text-sm transition"
+                >
+                    Price Switch Viewer
+                </button>
             </nav>
         </div>
 
@@ -319,6 +340,171 @@
                 </table>
             </div>
         </div>
+
+        <!-- Buyer Side Tab -->
+        <div x-show="activeTab === 'buyer_side'" class="p-6">
+            <div x-show="getBrokerSideRows('buyer').length === 0" class="text-center py-12 text-gray-500">
+                No data available for the selected filters.
+            </div>
+            <div x-show="getBrokerSideRows('buyer').length > 0">
+                <div class="mb-4 text-sm text-gray-600">
+                    Top 10 buying brokers by quantity &mdash;
+                    <span class="font-semibold" x-text="formatNumber(brokerSideTotals.buyer)"></span> shares bought in total.
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Broker Name</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                                <th @click="sortBrokerSide('buyer', 'quantity')" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100">
+                                    Quantity
+                                    <span x-show="buyerSideSort.column === 'quantity'" x-text="buyerSideSort.direction === 'asc' ? '↑' : '↓'"></span>
+                                </th>
+                                <th @click="sortBrokerSide('buyer', 'percentage')" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100">
+                                    % of Total
+                                    <span x-show="buyerSideSort.column === 'percentage'" x-text="buyerSideSort.direction === 'asc' ? '↑' : '↓'"></span>
+                                </th>
+                                <th @click="sortBrokerSide('buyer', 'average_price')" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100">
+                                    Avg Price
+                                    <span x-show="buyerSideSort.column === 'average_price'" x-text="buyerSideSort.direction === 'asc' ? '↑' : '↓'"></span>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            <template x-for="row in getBrokerSideRows('buyer')" :key="row.broker_id">
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="row.broker_name || '—'"></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="row.broker_id"></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="formatNumber(row.quantity)"></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="formatPercent(row.percentage)"></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="formatCurrency(row.average_price)"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Seller Side Tab -->
+        <div x-show="activeTab === 'seller_side'" class="p-6">
+            <div x-show="getBrokerSideRows('seller').length === 0" class="text-center py-12 text-gray-500">
+                No data available for the selected filters.
+            </div>
+            <div x-show="getBrokerSideRows('seller').length > 0">
+                <div class="mb-4 text-sm text-gray-600">
+                    Top 10 selling brokers by quantity &mdash;
+                    <span class="font-semibold" x-text="formatNumber(brokerSideTotals.seller)"></span> shares sold in total.
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Broker Name</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                                <th @click="sortBrokerSide('seller', 'quantity')" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100">
+                                    Quantity
+                                    <span x-show="sellerSideSort.column === 'quantity'" x-text="sellerSideSort.direction === 'asc' ? '↑' : '↓'"></span>
+                                </th>
+                                <th @click="sortBrokerSide('seller', 'percentage')" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100">
+                                    % of Total
+                                    <span x-show="sellerSideSort.column === 'percentage'" x-text="sellerSideSort.direction === 'asc' ? '↑' : '↓'"></span>
+                                </th>
+                                <th @click="sortBrokerSide('seller', 'average_price')" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100">
+                                    Avg Price
+                                    <span x-show="sellerSideSort.column === 'average_price'" x-text="sellerSideSort.direction === 'asc' ? '↑' : '↓'"></span>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            <template x-for="row in getBrokerSideRows('seller')" :key="row.broker_id">
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="row.broker_name || '—'"></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="row.broker_id"></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="formatNumber(row.quantity)"></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="formatPercent(row.percentage)"></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="formatCurrency(row.average_price)"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+<!-- Price Switch Viewer Tab -->
+<div x-show="activeTab === 'price_switch'" class="p-6">
+    <template x-if="!priceSwitch.rows.length">
+        <div class="text-center py-12 text-gray-500">
+            Need at least three distinct trade prices to compute a price switch.
+        </div>
+    </template>
+
+    <template x-if="priceSwitch.rows.length">
+        <div>
+            <!-- Price level legend -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div class="rounded border p-4">
+                    <div class="text-xs uppercase text-gray-500 mb-1">Highest Price</div>
+                    <div class="text-xl font-semibold" x-text="formatCurrency(priceSwitch.highest)"></div>
+                </div>
+                <div class="rounded border p-4">
+                    <div class="text-xs uppercase text-gray-500 mb-1">2nd Highest</div>
+                    <div class="text-xl font-semibold" x-text="formatCurrency(priceSwitch.second)"></div>
+                </div>
+                <div class="rounded border p-4">
+                    <div class="text-xs uppercase text-gray-500 mb-1">3rd Highest</div>
+                    <div class="text-xl font-semibold" x-text="formatCurrency(priceSwitch.third)"></div>
+                </div>
+            </div>
+
+            <!-- Trade rows -->
+            <div class="overflow-x-auto border rounded mb-6">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead>
+                        <tr class="border-b">
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Contract ID</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">BB</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">SB</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantity</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rate</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200">
+                        <template x-for="row in priceSwitch.rows" :key="row.label + '-' + row.contract_id">
+                            <tr>
+                                <td class="px-4 py-3 text-sm" x-text="row.contract_id"></td>
+                                <td class="px-4 py-3 text-sm" x-text="row.buyer_member_id"></td>
+                                <td class="px-4 py-3 text-sm" x-text="row.seller_member_id"></td>
+                                <td class="px-4 py-3 text-sm" x-text="formatNumber(row.contract_quantity)"></td>
+                                <td class="px-4 py-3 text-sm font-medium" x-text="formatCurrency(row.contract_rate)"></td>
+                                <td class="px-4 py-3 text-sm" x-text="formatCurrency(row.contract_amount)"></td>
+                                <td class="px-4 py-3 text-sm font-mono" x-text="formatTime(row.trade_time)"></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Stats -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="rounded border p-5">
+                    <div class="text-xs uppercase text-gray-500 mb-2">Switch Interval</div>
+                    <div class="text-2xl font-semibold" x-text="priceSwitch.stats.switchInterval"></div>
+                    <div class="text-xs text-gray-500 mt-1" x-text="priceSwitch.stats.switchIntervalDetail"></div>
+                </div>
+                <div class="rounded border p-5">
+                    <div class="text-xs uppercase text-gray-500 mb-2">Minutes after 11:00:00</div>
+                    <div class="text-2xl font-semibold" x-text="priceSwitch.stats.minutesAfter11"></div>
+                    <div class="text-xs text-gray-500 mt-1" x-text="priceSwitch.stats.minutesAfter11Detail"></div>
+                </div>
+            </div>
+        </div>
+    </template>
+</div>
     </div>
 
     <!-- No Date Selected Message -->
@@ -355,12 +541,38 @@ function floorsheetViewer() {
             column: 'start_time',
             direction: 'asc'
         },
+        buyerSideSort: {
+            column: 'quantity',
+            direction: 'desc'
+        },
+        sellerSideSort: {
+            column: 'quantity',
+            direction: 'desc'
+        },
+        brokerSideTotals: {
+            buyer: 0,
+            seller: 0
+        },
 
         // Pagination state
         floorsheetItemsPerPage: 100,
         floorsheetCurrentPage: 1,
         summaryItemsPerPage: 100,
         summaryCurrentPage: 1,
+
+        // Price Switch Viewer state
+        priceSwitch: {
+            rows: [],
+            highest: 0,
+            second: 0,
+            third: 0,
+            stats: {
+                switchInterval: '—',
+                switchIntervalDetail: '',
+                minutesAfter11: '—',
+                minutesAfter11Detail: ''
+            }
+        },
 
         // Initialize
         async init() {
@@ -437,6 +649,8 @@ function floorsheetViewer() {
             const response = await fetch(`/api/floorsheet/data?${params}`);
             const data = await response.json();
             this.floorsheetData = data.floorsheet || [];
+            this.computeBrokerSides();
+            this.computePriceSwitch();
         },
 
         // Load summary data
@@ -596,6 +810,205 @@ function floorsheetViewer() {
         getSummaryPaginationEnd() {
             const end = this.summaryCurrentPage * this.summaryItemsPerPage;
             return Math.min(end, this.getSortedSummaryData().length);
+        },
+
+        // --- Broker Side (Buyer / Seller) aggregation ---
+        computeBrokerSides() {
+            const buyerAgg = {};
+            const sellerAgg = {};
+            let buyerTotalQty = 0;
+            let sellerTotalQty = 0;
+
+            for (const row of this.floorsheetData) {
+                const qty = parseFloat(row.contract_quantity) || 0;
+                const amt = parseFloat(row.contract_amount) || 0;
+
+                const bId = row.buyer_member_id;
+                if (bId) {
+                    if (!buyerAgg[bId]) {
+                        buyerAgg[bId] = { broker_id: bId, broker_name: row.buyer_broker_name, quantity: 0, total_amount: 0 };
+                    }
+                    buyerAgg[bId].quantity += qty;
+                    buyerAgg[bId].total_amount += amt;
+                    buyerTotalQty += qty;
+                }
+
+                const sId = row.seller_member_id;
+                if (sId) {
+                    if (!sellerAgg[sId]) {
+                        sellerAgg[sId] = { broker_id: sId, broker_name: row.seller_broker_name, quantity: 0, total_amount: 0 };
+                    }
+                    sellerAgg[sId].quantity += qty;
+                    sellerAgg[sId].total_amount += amt;
+                    sellerTotalQty += qty;
+                }
+            }
+
+            const finalize = (agg, total) => Object.values(agg).map(b => ({
+                ...b,
+                average_price: b.quantity > 0 ? b.total_amount / b.quantity : 0,
+                percentage: total > 0 ? (b.quantity / total) * 100 : 0
+            }));
+
+            this._buyerSideAll = finalize(buyerAgg, buyerTotalQty);
+            this._sellerSideAll = finalize(sellerAgg, sellerTotalQty);
+            this.brokerSideTotals = { buyer: buyerTotalQty, seller: sellerTotalQty };
+        },
+
+        sortBrokerSide(side, column) {
+            const sortState = side === 'buyer' ? this.buyerSideSort : this.sellerSideSort;
+            if (sortState.column === column) {
+                sortState.direction = sortState.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortState.column = column;
+                sortState.direction = 'desc';
+            }
+        },
+
+        getBrokerSideRows(side) {
+            const all = side === 'buyer' ? (this._buyerSideAll || []) : (this._sellerSideAll || []);
+            // First pick top 10 by quantity (the "top brokers" definition is by quantity)
+            const top = [...all].sort((a, b) => b.quantity - a.quantity).slice(0, 10);
+            // Then apply user-selected sort within that set
+            const sortState = side === 'buyer' ? this.buyerSideSort : this.sellerSideSort;
+            const { column, direction } = sortState;
+            return top.sort((a, b) => {
+                const av = parseFloat(a[column]) || 0;
+                const bv = parseFloat(b[column]) || 0;
+                if (av < bv) return direction === 'asc' ? -1 : 1;
+                if (av > bv) return direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+        },
+
+        // --- Price Switch Viewer ---
+        _parseTimeSeconds(t) {
+            if (!t) return null;
+            const [hms, frac] = t.split('.');
+            const parts = hms.split(':');
+            if (parts.length !== 3) return null;
+            const h = parseInt(parts[0], 10);
+            const m = parseInt(parts[1], 10);
+            const s = parseInt(parts[2], 10);
+            const ms = frac ? parseFloat('0.' + frac) : 0;
+            return h * 3600 + m * 60 + s + ms;
+        },
+
+        _formatDuration(totalSeconds) {
+            if (totalSeconds == null || isNaN(totalSeconds)) return '—';
+            const sign = totalSeconds < 0 ? '-' : '';
+            const s = Math.abs(totalSeconds);
+            const hrs = Math.floor(s / 3600);
+            const mins = Math.floor((s % 3600) / 60);
+            const secs = (s % 60);
+            const secsStr = secs.toFixed(3).padStart(6, '0');
+            if (hrs > 0) {
+                return `${sign}${hrs}h ${mins}m ${secs.toFixed(1)}s`;
+            }
+            if (mins > 0) {
+                return `${sign}${mins}m ${secs.toFixed(1)}s`;
+            }
+            return `${sign}${secsStr}s`;
+        },
+
+        computePriceSwitch() {
+            const reset = {
+                rows: [],
+                highest: 0,
+                second: 0,
+                third: 0,
+                stats: {
+                    switchInterval: '—',
+                    switchIntervalDetail: '',
+                    minutesAfter11: '—',
+                    minutesAfter11Detail: ''
+                }
+            };
+
+            if (!this.floorsheetData.length) {
+                this.priceSwitch = reset;
+                return;
+            }
+
+            const uniqueRates = [...new Set(
+                this.floorsheetData.map(r => parseFloat(r.contract_rate)).filter(v => !isNaN(v))
+            )].sort((a, b) => b - a);
+
+            if (uniqueRates.length < 3) {
+                this.priceSwitch = reset;
+                return;
+            }
+
+            const [highest, second, third] = uniqueRates;
+            const byTime = [...this.floorsheetData].sort((a, b) =>
+                (a.trade_time || '').localeCompare(b.trade_time || '')
+            );
+
+            const firstAt = (rate) => byTime.find(r => parseFloat(r.contract_rate) === rate);
+            const lastAt = (rate) => {
+                for (let i = byTime.length - 1; i >= 0; i--) {
+                    if (parseFloat(byTime[i].contract_rate) === rate) return byTime[i];
+                }
+                return null;
+            };
+
+            const firstHighest = firstAt(highest);
+            const firstSecond = firstAt(second);
+            const lastThird = lastAt(third);
+
+            const tagged = [];
+            if (lastThird) tagged.push({
+                ...lastThird,
+                label: '3rd · last',
+                badgeClass: 'bg-slate-200 text-slate-700',
+                rowClass: 'bg-slate-50/60'
+            });
+            if (firstSecond) tagged.push({
+                ...firstSecond,
+                label: '2nd · first',
+                badgeClass: 'bg-amber-200 text-amber-800',
+                rowClass: 'bg-amber-50/60'
+            });
+            if (firstHighest) tagged.push({
+                ...firstHighest,
+                label: '1st · first',
+                badgeClass: 'bg-emerald-200 text-emerald-800',
+                rowClass: 'bg-emerald-50/60'
+            });
+
+            tagged.sort((a, b) => (a.trade_time || '').localeCompare(b.trade_time || ''));
+
+            // Stats
+            let switchInterval = '—';
+            let switchIntervalDetail = '';
+            if (lastThird && firstSecond) {
+                const t1 = this._parseTimeSeconds(lastThird.trade_time);
+                const t2 = this._parseTimeSeconds(firstSecond.trade_time);
+                if (t1 != null && t2 != null) {
+                    const diff = t2 - t1;
+                    switchInterval = this._formatDuration(diff);
+                    switchIntervalDetail = `${this.formatTime(lastThird.trade_time)}  →  ${this.formatTime(firstSecond.trade_time)}`;
+                }
+            }
+
+            let minutesAfter11 = '—';
+            let minutesAfter11Detail = '';
+            if (lastThird) {
+                const t = this._parseTimeSeconds(lastThird.trade_time);
+                const base = 11 * 3600;
+                if (t != null) {
+                    const diffMin = Math.floor((t - base) / 60);
+                    const diffSec = ((t - base) % 60).toFixed(3);
+                    minutesAfter11 = `${diffMin}m ${diffSec}s`;
+                    minutesAfter11Detail = `trade at ${this.formatTime(lastThird.trade_time)}`;
+                }
+            }
+
+            this.priceSwitch = {
+                rows: tagged,
+                highest, second, third,
+                stats: { switchInterval, switchIntervalDetail, minutesAfter11, minutesAfter11Detail }
+            };
         }
     }
 }

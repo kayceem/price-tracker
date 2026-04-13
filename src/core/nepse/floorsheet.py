@@ -1,267 +1,23 @@
 import argparse
 import asyncio
-import json
-import httpx
+import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from wasmtime import Store, Module, Instance
 from src.config.settings import config
 from src.database import get_db, Floorsheet, FloorsheetSchema, FetchListItemSchema, Scripts, Broker, BrokerSchema
+from src.core.nepse.client import NEPSE
+import json
 
-
-class NepseAuthenticator:
-    """Handles authentication with NEPSE API."""
-
-    def __init__(self):
-        self.base_url = "https://www.nepalstock.com"
-        self.access_token: Optional[str] = None
-        self.refresh_token: Optional[str] = None
-        self.salt_values: list[int] = []  # Store salt1-salt5 from initial /prove
-        self.original_salt_values: list[int] = []  # Keep original salts for ID calculation
-        self.market_status_id: Optional[int] = None  # dummyId from market-open API
-        self.headers = {
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0",
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Content-Type": "application/json",
-            "Origin": self.base_url,
-            "Referer": f"{self.base_url}/floor-sheet",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Sec-GPC": "1",
-            "Connection": "keep-alive",
-            "Sec-Fetch-Dest": "empty",
-            "Sec-Fetch-Mode": "cors",
-            "Sec-Fetch-Site": "same-origin",
-            "TE": "trailers",
-        }
-        self._setup_wasm()
-
-    def _setup_wasm(self):
-        wasm_path = config.data_dir / "css.wasm"
-        if not wasm_path.exists():
-            with httpx.Client(timeout=30.0, verify=False) as client:
-                response = client.get(
-                    f"{self.base_url}/assets/prod/css.wasm",
-                    headers=self.headers
-                )
-                response.raise_for_status()
-                wasm_path.write_bytes(response.content)
-        self.wasm_store = Store()
-        self.wasm_module = Module.from_file(self.wasm_store.engine, str(wasm_path))
-        self.wasm_instance = Instance(self.wasm_store, self.wasm_module, [])
-
-    async def get_market_status(self, client: httpx.AsyncClient) -> bool:
-        """Get market status which includes the dummyId."""
-        try:
-            response = await client.get(
-                f"{self.base_url}/api/nots/nepse-data/market-open",
-                headers=self.get_auth_headers()
-            )
-            response.raise_for_status()
-            data = response.json()
-            self.market_status_id = data.get("id")
-            return bool(self.market_status_id is not None)
-        except Exception as e:
-            print(f"Failed to get market status: {e}")
-            return False
-
-    async def authenticate(self, client: httpx.AsyncClient) -> bool:
-        """Get initial access token and refresh token."""
-        try:
-            response = await client.get(
-                f"{self.base_url}/api/authenticate/prove",
-                headers=self.headers
-            )
-            response.raise_for_status()
-            data = response.json()
-            self.access_token = data.get("accessToken")
-            self.refresh_token = data.get("refreshToken")
-
-            # Store salt values for request ID calculation
-            self.salt_values = [
-                data.get("salt1", 0),
-                data.get("salt2", 0),
-                data.get("salt3", 0),
-                data.get("salt4", 0),
-                data.get("salt5", 0)
-            ]
-
-            # Store original salts - these are used for request ID calculation
-            # even after token refresh
-            self.original_salt_values = self.salt_values.copy()
-
-            # Trim tokens using WebAssembly functions
-            self.access_token = self._trim_access_token(self.access_token, self.salt_values)
-            self.refresh_token = self._trim_refresh_token(self.refresh_token, self.salt_values)
-
-            # Get market status to obtain dummyId
-            await self.get_market_status(client)
-
-            return bool(self.access_token)
-        except Exception as e:
-            print(f"Authentication failed: {e}")
-            return False
-
-    async def refresh_access_token(self, client: httpx.AsyncClient) -> bool:
-        """Refresh the access token using the refresh token."""
-        if not self.refresh_token:
-            return await self.authenticate(client)
-
-        try:
-            headers = {**self.headers, "Authorization": f"Salter {self.refresh_token}"}
-            response = await client.post(
-                f"{self.base_url}/api/authenticate/refresh-token",
-                headers=headers
-            )
-            response.raise_for_status()
-            data = response.json()
-            self.access_token = data.get("accessToken")
-            self.refresh_token = data.get("refreshToken")
-
-            # Update current salt values after token refresh
-            self.salt_values = [
-                data.get("salt1", 0),
-                data.get("salt2", 0),
-                data.get("salt3", 0),
-                data.get("salt4", 0),
-                data.get("salt5", 0)
-            ]
-
-            # IMPORTANT: Keep original_salt_values unchanged!
-            # Request ID calculation always uses the original /prove salts
-
-            # Trim the refreshed tokens
-            self.access_token = self._trim_access_token(self.access_token, self.salt_values)
-            self.refresh_token = self._trim_refresh_token(self.refresh_token, self.salt_values)
-
-            return bool(self.access_token)
-        except Exception as e:
-            print(f"Token refresh failed: {e}")
-            return await self.authenticate(client)
-
-    def _trim_access_token(self, token: str, salt_values: list[int]) -> str:
-        """
-        Trim access token by removing characters at positions determined by WebAssembly functions.
-        Pattern: token.slice(0, cdx) + token.slice(cdx+1, rdx) + ... + token.slice(mdx+1)
-        """
-        s1, s2, s3, s4, s5 = salt_values
-
-        # Get WASM exports
-        cdx = self.wasm_instance.exports(self.wasm_store)["cdx"]
-        rdx = self.wasm_instance.exports(self.wasm_store)["rdx"]
-        bdx = self.wasm_instance.exports(self.wasm_store)["bdx"]
-        ndx = self.wasm_instance.exports(self.wasm_store)["ndx"]
-        mdx = self.wasm_instance.exports(self.wasm_store)["mdx"]
-
-        # Calculate positions (note the parameter order from snippet.js)
-        cdx_pos = cdx(self.wasm_store, s1, s2, s3, s4, s5)
-        rdx_pos = rdx(self.wasm_store, s1, s2, s4, s3, s5)  # salt3 and salt4 swapped
-        bdx_pos = bdx(self.wasm_store, s1, s2, s4, s3, s5)
-        ndx_pos = ndx(self.wasm_store, s1, s2, s4, s3, s5)
-        mdx_pos = mdx(self.wasm_store, s1, s2, s4, s3, s5)
-
-        # Apply trimming - skip characters at these positions
-        trimmed = (
-            token[:cdx_pos] +
-            token[cdx_pos + 1:rdx_pos] +
-            token[rdx_pos + 1:bdx_pos] +
-            token[bdx_pos + 1:ndx_pos] +
-            token[ndx_pos + 1:mdx_pos] +
-            token[mdx_pos + 1:]
-        )
-
-        return trimmed
-
-    def _trim_refresh_token(self, token: str, salt_values: list[int]) -> str:
-        """
-        Trim refresh token by removing characters at positions determined by WebAssembly functions.
-        Uses different parameter order than access token.
-        """
-        s1, s2, s3, s4, s5 = salt_values
-
-        # Get WASM exports
-        cdx = self.wasm_instance.exports(self.wasm_store)["cdx"]
-        rdx = self.wasm_instance.exports(self.wasm_store)["rdx"]
-        bdx = self.wasm_instance.exports(self.wasm_store)["bdx"]
-        ndx = self.wasm_instance.exports(self.wasm_store)["ndx"]
-        mdx = self.wasm_instance.exports(self.wasm_store)["mdx"]
-
-        # Calculate positions (different parameter order for refresh token)
-        cdx_pos = cdx(self.wasm_store, s2, s1, s3, s5, s4)
-        rdx_pos = rdx(self.wasm_store, s2, s1, s3, s4, s5)
-        bdx_pos = bdx(self.wasm_store, s2, s1, s4, s3, s5)
-        ndx_pos = ndx(self.wasm_store, s2, s1, s4, s3, s5)
-        mdx_pos = mdx(self.wasm_store, s2, s1, s4, s3, s5)
-
-        # Apply trimming
-        trimmed = (
-            token[:cdx_pos] +
-            token[cdx_pos + 1:rdx_pos] +
-            token[rdx_pos + 1:bdx_pos] +
-            token[bdx_pos + 1:ndx_pos] +
-            token[ndx_pos + 1:mdx_pos] +
-            token[mdx_pos + 1:]
-        )
-
-        return trimmed
-
-    def get_auth_headers(self) -> dict:
-        """Get headers with authorization token."""
-        return {
-            **self.headers,
-            "Authorization": f"Salter {self.access_token}"
-        }
-
-    def calculate_request_id(self) -> int:
-        """
-        Calculate the request ID using salt values.
-        Based on: i + accessTokens[index] * day - accessTokens[index - 1]
-        where i = getDummyData()[dummyId] + dummyId + 2 * day
-        """
-        # Dummy data array from NEPSE's obfuscated JavaScript
-        dummy_data = [
-            147, 117, 239, 143, 157, 312, 161, 612, 512, 804, 411, 527, 170, 511, 421, 667, 764, 621, 301, 106,
-            133, 793, 411, 511, 312, 423, 344, 346, 653, 758, 342, 222, 236, 811, 711, 611, 122, 447, 128, 199,
-            183, 135, 489, 703, 800, 745, 152, 863, 134, 211, 142, 564, 375, 793, 212, 153, 138, 153, 648, 611,
-            151, 649, 318, 143, 117, 756, 119, 141, 717, 113, 112, 146, 162, 660, 693, 261, 362, 354, 251, 641,
-            157, 178, 631, 192, 734, 445, 192, 883, 187, 122, 591, 731, 852, 384, 565, 596, 451, 772, 624, 691
-        ]
-
-        day = datetime.now().day
-
-        # dummyId comes from market-open API response
-        dummy_id = self.market_status_id if self.market_status_id is not None else 1
-
-        if dummy_id >= len(dummy_data):
-            dummy_id = dummy_id % len(dummy_data)
-
-        # Get dummy value from array
-        dummy_data_value = dummy_data[dummy_id]
-
-        # Calculate i
-        i = dummy_data_value + dummy_id + 2 * day
-
-        # Determine index based on i % 10
-        index = 1 if i % 10 < 4 else 3
-
-        # Calculate final ID
-        # IMPORTANT: Always use original_salt_values from /prove, not current salt_values
-        # accessTokens array is [salt1, salt2, salt3, salt4, salt5]
-        salt_values_for_calc = self.original_salt_values if self.original_salt_values else self.salt_values
-        request_id = i + salt_values_for_calc[index] * day - salt_values_for_calc[index - 1]
-
-        return request_id
-
+logger = logging.getLogger(__name__)
 
 class FloorsheetFetcher:
     """Fetches floorsheet data from NEPSE API and stores in database."""
 
     def __init__(self):
-        self.authenticator = NepseAuthenticator()
-        self.base_url = "https://www.nepalstock.com"
+        self.nepse = NEPSE()
 
     async def get_stock_id(self, ticker: str) -> Optional[int]:
         """Get NEPSE stock ID from database by ticker symbol."""
@@ -306,7 +62,6 @@ class FloorsheetFetcher:
 
     async def fetch_floorsheet(
         self,
-        client: httpx.AsyncClient,
         stock_id: int,
         ticker: str,
         date: str,
@@ -314,41 +69,24 @@ class FloorsheetFetcher:
         size: int = 500
     ) -> dict:
         """Fetch floorsheet data from NEPSE API."""
-        url = f"{self.base_url}/api/nots/nepse-data/floorsheet?&page={page}&size={size}&stockId={stock_id}&sort=contractId,desc&businessDate={date}"
-
-        # Calculate request ID from salt values
-        request_id = self.authenticator.calculate_request_id()
-        request_body = {"id": request_id}
-
         try:
-            # Send as raw JSON data (not using json= parameter)
-            response = await client.post(
-                url,
-                headers=self.authenticator.get_auth_headers(),
-                content=json.dumps(request_body)
+            data = await self.nepse.fetch_floorsheet(
+                stock_id=stock_id,
+                business_date=date,
+                page=page,
+                size=size,
             )
-
-            if response.status_code == 401:
-                print("Token expired, refreshing...")
-                if await self.authenticator.refresh_access_token(client):
-                    request_id = self.authenticator.calculate_request_id()
-                    request_body = {"id": request_id}
-                    response = await client.post(
-                        url,
-                        headers=self.authenticator.get_auth_headers(),
-                        content=json.dumps(request_body)
-                    )
-
-            response.raise_for_status()
-            # Check if response is empty
-            if not response.text:
-                print(f"Empty response for {ticker} on {date} - market may be closed or no data available")
+            if not data:
+                logger.warning(
+                    "Empty floorsheet response for ticker=%s stock_id=%s business_date=%s",
+                    ticker,
+                    stock_id,
+                    date,
+                )
                 return {}
-
-            return response.json()
+            return data
         except Exception as e:
-            print(f"Error fetching floorsheet for {ticker} on {date}: {e}")
-            print(f"Request ID used: {request_id}")
+            logger.exception("Error fetching floorsheet for ticker=%s business_date=%s", ticker, date)
             return {}
 
     async def get_or_create_broker(self, db, member_id: str, name: str) -> int:
@@ -405,10 +143,17 @@ class FloorsheetFetcher:
             await db.commit()
             return script.id
 
-        # Should not happen if Scripts table is properly seeded
-        # But handle it anyway
-        print(f"Warning: Script {symbol} (ID: {stock_id}) not found in database")
-        return None
+        logger.info("Creating missing script from floorsheet for ticker=%s stock_id=%s", symbol, stock_id)
+        script = Scripts(
+            ticker=symbol,
+            name=name,
+            href=f"/company/detail/{stock_id}",
+            nepse_id=stock_id,
+        )
+        db.add(script)
+        await db.flush()
+        await db.commit()
+        return script.id
 
     async def get_or_update_floorsheet(
         self,
@@ -478,7 +223,7 @@ class FloorsheetFetcher:
                     )
 
                     if not script_id:
-                        print(f"Skipping floorsheet record {item.get('contractId')}: Script not found")
+                        logger.warning("Skipping floorsheet record contract_id=%s: script not found", item.get("contractId"))
                         skipped_count += 1
                         continue
 
@@ -509,11 +254,11 @@ class FloorsheetFetcher:
 
                 except IntegrityError as e:
                     await db.rollback()
-                    print(f"Duplicate record for contract ID {item.get('contractId')}: {e}")
+                    logger.warning("Duplicate floorsheet record for contract_id=%s", item.get("contractId"))
                     skipped_count += 1
                 except Exception as e:
                     await db.rollback()
-                    print(f"Error saving floorsheet record {item.get('contractId')}: {e}")
+                    logger.exception("Error saving floorsheet record contract_id=%s", item.get("contractId"))
                     skipped_count += 1
 
         return new_count, updated_count, skipped_count
@@ -526,26 +271,23 @@ class FloorsheetFetcher:
     ) -> dict:
         """Fetch and save floorsheet data for a ticker and date."""
         if not force and await self.check_existing_data(ticker, date):
-            print(f"Data already exists for {ticker} on {date}. Use --force to refetch.")
+            logger.info("Floorsheet data already exists for ticker=%s business_date=%s", ticker, date)
             return {"ticker": ticker, "date": date, "status": "skipped", "reason": "already_exists"}
 
         stock_id = await self.get_stock_id(ticker)
         if not stock_id:
-            print(f"Stock ID not found for ticker: {ticker}")
+            logger.warning("Stock ID not found for ticker=%s", ticker)
             return {"ticker": ticker, "date": date, "status": "error", "reason": "stock_not_found"}
 
-        async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
-            if not self.authenticator.access_token:
-                if not await self.authenticator.authenticate(client):
-                    return {"ticker": ticker, "date": date, "status": "error", "reason": "auth_failed"}
-
+        try:
+            logger.info("Fetching floorsheet for ticker=%s stock_id=%s business_date=%s", ticker, stock_id, date)
             page = 0
             total_new = 0
             total_updated = 0
             total_skipped = 0
 
             while True:
-                data = await self.fetch_floorsheet(client, stock_id, ticker, date, page)
+                data = await self.fetch_floorsheet(stock_id, ticker, date, page)
 
                 if not data or "floorsheets" not in data:
                     break
@@ -561,7 +303,15 @@ class FloorsheetFetcher:
                 total_updated += updated
                 total_skipped += skipped
 
-                print(f"Page {page}: New {new}, Updated {updated}, Skipped {skipped} records for {ticker} on {date}")
+                logger.info(
+                    "Floorsheet page processed ticker=%s business_date=%s page=%s new=%s updated=%s skipped=%s",
+                    ticker,
+                    date,
+                    page,
+                    new,
+                    updated,
+                    skipped,
+                )
 
                 if floorsheet_data.get("last", True):
                     break
@@ -569,7 +319,14 @@ class FloorsheetFetcher:
                 page += 1
 
             total_saved = total_new + total_updated
-            print(f"Total for {ticker} on {date}: New {total_new}, Updated {total_updated}, Skipped {total_skipped}")
+            logger.info(
+                "Floorsheet fetch complete ticker=%s business_date=%s new=%s updated=%s skipped=%s",
+                ticker,
+                date,
+                total_new,
+                total_updated,
+                total_skipped,
+            )
             return {
                 "ticker": ticker,
                 "date": date,
@@ -579,6 +336,8 @@ class FloorsheetFetcher:
                 "saved": total_saved,
                 "skipped": total_skipped
             }
+        finally:
+            await self.nepse.aclose()
 
     async def fetch_from_list(self, fetch_list: list[dict]) -> list[dict]:
         """Fetch floorsheet data for multiple tickers and dates from a list."""
@@ -595,7 +354,7 @@ class FloorsheetFetcher:
                     )
                 results.append(result)
             except Exception as e:
-                print(f"Error processing item {item}: {e}")
+                logger.exception("Error processing floorsheet fetch item: %s", item)
                 results.append({
                     "ticker": item.get("ticker"),
                     "status": "error",
@@ -620,7 +379,7 @@ async def main():
     if args.fetch_list:
         fetch_list_path = Path(args.fetch_list)
         if not fetch_list_path.exists():
-            print(f"Fetch list file not found: {args.fetch_list}")
+            logger.error("Fetch list file not found: %s", args.fetch_list)
             return
 
         with open(fetch_list_path, "r") as f:
@@ -628,11 +387,11 @@ async def main():
 
         results = await fetcher.fetch_from_list(fetch_list)
         for result in results:
-            print(result)
+            logger.info("Floorsheet fetch result: %s", result)
 
     elif args.ticker:
         result = await fetcher.fetch_and_save(args.ticker, args.date, args.force)
-        print(result)
+        logger.info("Floorsheet fetch result: %s", result)
 
     else:
         parser.print_help()

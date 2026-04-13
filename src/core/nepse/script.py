@@ -1,106 +1,175 @@
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import logging
 
 from sqlalchemy import select
 
 from src.database import Scripts, get_db
 from src.database import ScriptDetails
 from src.database import Tracker
-from src.database import ScriptDetailsSchema
 from sqlalchemy.orm import selectinload
 
-from .fetch import fetch_script_details, fetch_all_script_details
+from .fetch import fetch_all_script_details
 
 from src.utils import check_time_delta, valid_day_time
 from sqlalchemy.orm import Session
 
-async def get_script_ltp(db : Session, script:Scripts):
-    if not script.script_details or (check_time_delta(script.script_details.updated_at, 30) and valid_day_time()):
-        try:
-            script_details = ScriptDetailsSchema(**await fetch_script_details(script.href, script.id))
-            script.script_details = ScriptDetails(**script_details.model_dump())
+logger = logging.getLogger(__name__)
+
+def _safe_float(value, default=None):
+    if value is None or value == "-":
+        return default
+    return float(value)
+
+
+def _safe_int(value, default=0):
+    if value is None or value == "-":
+        return default
+    return int(value)
+
+
+def _to_script_href(security_id: int) -> str:
+    return f"/company/detail/{security_id}"
+
+
+def _map_today_price_to_details(payload: dict, script_id: int) -> dict:
+    high = _safe_float(payload.get("highPrice"), 0.0)
+    low = _safe_float(payload.get("lowPrice"), 0.0)
+    week_high = _safe_float(payload.get("fiftyTwoWeekHigh"), 0.0)
+    week_low = _safe_float(payload.get("fiftyTwoWeekLow"), 0.0)
+    last_traded_price = _safe_float(payload.get("lastUpdatedPrice"))
+    close_price = _safe_float(payload.get("closePrice"), last_traded_price)
+
+    return {
+        "script_id": script_id,
+        "last_traded_price": last_traded_price,
+        "total_traded_quantity": _safe_int(payload.get("totalTradedQuantity")),
+        "total_trades": _safe_int(payload.get("totalTrades")),
+        "previous_day_close_price": _safe_float(payload.get("previousDayClosePrice"), 0.0),
+        "high_price_low_price": f"{high} - {low}",
+        "week_52_high_low": f"{week_high} - {week_low}",
+        "open_price": _safe_float(payload.get("openPrice"), 0.0),
+        "close_price": close_price if close_price is not None else 0.0,
+        "market_capitalization": _safe_float(payload.get("marketCapitalization")),
+    }
+
+
+class ScriptDetailsFetcher:
+    """Refresh script details from the NEPSE today-price endpoint."""
+
+    async def fetch_and_save(self, only_tickers: set[str] | None = None) -> dict[str, dict]:
+        payloads = await fetch_all_script_details()
+        if not payloads:
+            logger.warning("No NEPSE today-price payloads returned for script detail refresh")
+            return {}
+
+        data_by_ticker = {item["symbol"]: item for item in payloads if item.get("symbol")}
+
+        async with get_db() as db:
+            existing_scripts = {
+                script.ticker: script
+                for script in (await db.execute(select(Scripts))).scalars().all()
+            }
+            details_by_script_id = {
+                details.script_id: details
+                for details in (await db.execute(select(ScriptDetails))).scalars().all()
+            }
+
+            for ticker, payload in data_by_ticker.items():
+                if only_tickers is not None and ticker not in only_tickers:
+                    continue
+
+                security_id = payload.get("securityId")
+                if security_id is None:
+                    continue
+
+                script = existing_scripts.get(ticker)
+                if script is None:
+                    logger.info("Creating missing script for ticker=%s security_id=%s", ticker, security_id)
+                    script = Scripts(
+                        ticker=ticker,
+                        name=payload.get("securityName"),
+                        href=_to_script_href(security_id),
+                        nepse_id=security_id,
+                    )
+                    db.add(script)
+                    await db.flush()
+                    existing_scripts[ticker] = script
+                else:
+                    script.name = payload.get("securityName") or script.name
+                    script.nepse_id = security_id
+                    script.href = script.href or _to_script_href(security_id)
+
+                details_payload = _map_today_price_to_details(payload, script.id)
+                existing_details = details_by_script_id.get(script.id)
+                if existing_details:
+                    for key, value in details_payload.items():
+                        if key != "script_id":
+                            setattr(existing_details, key, value)
+                else:
+                    existing_details = ScriptDetails(**details_payload)
+                    db.add(existing_details)
+                    details_by_script_id[script.id] = existing_details
+
             await db.commit()
-            return script.script_details.last_traded_price
+
+        refreshed_count = len(data_by_ticker) if only_tickers is None else len([t for t in data_by_ticker if t in only_tickers])
+        logger.info("Refreshed script details for %s tickers", refreshed_count)
+        return data_by_ticker
+
+
+async def _get_script_details_row(db: Session, script_id: int) -> ScriptDetails | None:
+    return (
+        await db.execute(
+            select(ScriptDetails).filter(ScriptDetails.script_id == script_id)
+        )
+    ).scalars().first()
+
+
+async def get_script_ltp(db: Session, script: Scripts):
+    details_row = await _get_script_details_row(db, script.id)
+
+    if not details_row or (check_time_delta(details_row.updated_at, 30) and valid_day_time()):
+        try:
+            logger.debug("Refreshing LTP from NEPSE for ticker=%s", script.ticker)
+            await ScriptDetailsFetcher().fetch_and_save({script.ticker})
+            details_row = await _get_script_details_row(db, script.id)
+            if not details_row:
+                logger.warning("No script details found after refresh for ticker=%s", script.ticker)
+                return None
         except Exception as e:
-            print(e)
+            logger.exception("Failed to refresh script LTP for ticker=%s", script.ticker)
             return None
-    return script.script_details.last_traded_price
+
+    script.script_details = details_row
+    return details_row.last_traded_price
 
 async def refresh_script_detail(ticker):
-    async with get_db() as db:
-        script = (await db.execute(select(Scripts).filter(Scripts.ticker==ticker))).scalars().first()
-    if not script:
+    try:
+        data_by_ticker = await ScriptDetailsFetcher().fetch_and_save({ticker})
+        return ticker in data_by_ticker
+    except Exception as e:
+        logger.exception("Failed to refresh script detail for ticker=%s", ticker)
         return False
-    with ThreadPoolExecutor() as executor:
-        future = executor.submit(fetch_script_details, script.href ,script.id)
-        # await as_completed(future)
-        try:
-            scripts_details = ScriptDetailsSchema(**await future.result())
-        except Exception as e:
-            print(e)
-    async with get_db() as db:
-        script = (await db.execute(select(Scripts).filter(Scripts.id == scripts_details.script_id).options(selectinload(Scripts.script_details)))).scalars().first()
-        script.script_details = ScriptDetails(**scripts_details.model_dump())
-        await db.commit()
-    return True
 
 async def refresh_script_details():
     async with get_db() as db:
         scripts = (await db.execute(select(Scripts).join(Tracker))).scalars().all()
     if not scripts:
         return False
-    scripts_details = []
-    with ThreadPoolExecutor() as executor:
-        futures = [executor.submit(fetch_script_details, script.href ,script.id) for script in scripts]
-        for future in as_completed(futures):
-            try:
-                scripts_details.append(ScriptDetailsSchema(**await future.result()))
-            except Exception as e:
-                print(e)
-    async with get_db() as db:
-        for details in scripts_details:
-            script = (await db.execute(select(Scripts).filter(Scripts.id == details.script_id).options(selectinload(Scripts.script_details)))).scalars().first()
-            script.script_details = ScriptDetails(**details.model_dump())
-            await db.commit()
-    return True
+    tickers = {script.ticker for script in scripts}
+    try:
+        await ScriptDetailsFetcher().fetch_and_save(tickers)
+        return True
+    except Exception as e:
+        logger.exception("Failed to refresh tracked script details")
+        return False
 
 async def refresh_all_script_details():
-    data = await fetch_all_script_details()
-    details_by_ticker = {details["ticker"]: details for details in data}
-    async with get_db() as db:
-        scripts = (await db.execute(
-            select(Scripts).options(selectinload(Scripts.script_details))
-        )).scalars().all()
-
-        for script in scripts:
-            details = details_by_ticker.get(script.ticker)
-            if details:
-                if script.script_details:
-                    # Update existing record
-                    script.script_details.last_traded_price = float(details["last_traded_price"])
-                    script.script_details.total_traded_quantity = int(details["total_traded_quantity"])
-                    script.script_details.total_trades = int(details["total_trades"])
-                    script.script_details.previous_day_close_price = float(details["previous_day_close_price"])
-                    script.script_details.high_price_low_price = details["high_price_low_price"]
-                    script.script_details.week_52_high_low = details["week_52_high_low"]
-                    script.script_details.open_price = float(details["open_price"])
-                    script.script_details.close_price = float(details["close"] if details["close"] != "-" else details["last_traded_price"])
-                    script.script_details.market_capitalization = float(details["market_capitalization"]) if details["market_capitalization"] and details["market_capitalization"] != "-" else None
-                else:
-                    # Create new record
-                    script.script_details = ScriptDetails(
-                        script_id=script.id,
-                        last_traded_price=float(details["last_traded_price"]),
-                        total_traded_quantity=int(details["total_traded_quantity"]),
-                        total_trades=int(details["total_trades"]),
-                        previous_day_close_price=float(details["previous_day_close_price"]),
-                        high_price_low_price=details["high_price_low_price"],
-                        week_52_high_low=details["week_52_high_low"],
-                        open_price=float(details["open_price"]),
-                        close_price=float(details["close"] if details["close"] != "-" else details["last_traded_price"]),
-                        market_capitalization=float(details["market_capitalization"]) if details["market_capitalization"] and details["market_capitalization"] != "-" else None
-                    )
-        await db.commit()
-    return True
+    try:
+        data_by_ticker = await ScriptDetailsFetcher().fetch_and_save()
+        return bool(data_by_ticker)
+    except Exception as e:
+        logger.exception("Failed to refresh all script details")
+        return False
 
 if __name__ == "__main__":
     import asyncio

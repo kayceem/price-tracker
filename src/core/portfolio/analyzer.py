@@ -407,57 +407,31 @@ class PortfolioAnalyzer:
         portfolio_summary = self.get_portfolio_summary(current_prices, wacc_data)
         summary_path = Path(output_dir, 'portfolio_summary.csv')
         portfolio_summary.to_csv(summary_path, index=False)
-        print(f"✓ Portfolio Summary: {summary_path}")
+        print(f"Portfolio Summary: {summary_path}")
 
         # 2. Transaction History
         transaction_history = self.get_transaction_history()
         trans_path = Path(output_dir, 'transaction_history.csv')
         transaction_history.to_csv(trans_path, index=False)
-        print(f"✓ Transaction History: {trans_path}")
+        print(f"Transaction History: {trans_path}")
 
         # 3. Current Holdings
         holdings = self.get_current_holdings_summary(current_prices)
         holdings_path = Path(output_dir, 'current_holdings.csv')
         holdings.to_csv(holdings_path, index=False)
-        print(f"✓ Current Holdings: {holdings_path}")
+        print(f"Current Holdings: {holdings_path}")
 
         # 4. Detailed Pools
         pools = self.get_detailed_pools(current_prices)
         pools_path = Path(output_dir, 'detailed_holdings_pools.csv')
         pools.to_csv(pools_path, index=False)
-        print(f"✓ Detailed Holdings Pools: {pools_path}")
+        print(f"Detailed Holdings Pools: {pools_path}")
 
         # 5. Interest Analysis
         interest = self.get_interest_analysis()
         interest_path = Path(output_dir, 'interest_analysis.csv')
         interest.to_csv(interest_path, index=False)
-        print(f"✓ Interest Analysis: {interest_path}")
-
-        # Print summary
-        print("\n" + "="*60)
-        print("PORTFOLIO SUMMARY")
-        print("="*60)
-
-        if not portfolio_summary.empty:
-            total_investment = portfolio_summary['Total Investment'].sum()
-            total_current_value = portfolio_summary['Current Value'].sum()
-            total_realized = portfolio_summary['Realized P&L'].sum()
-            total_unrealized = portfolio_summary['Unrealized P&L'].sum()
-            total_pnl = portfolio_summary['Total P&L'].sum()
-            total_interest = portfolio_summary['Interest Cost'].sum()
-            net_pnl = portfolio_summary['Net P&L (After Interest)'].sum()
-
-            print(f"Total Investment:         Rs. {total_investment:,.2f}")
-            print(f"Current Value:            Rs. {total_current_value:,.2f}")
-            print(f"Realized P&L:             Rs. {total_realized:,.2f}")
-            print(f"Unrealized P&L:           Rs. {total_unrealized:,.2f}")
-            print(f"Total P&L:                Rs. {total_pnl:,.2f}")
-            print(f"Interest Cost ({INTEREST_RATE}%):    Rs. {total_interest:,.2f}")
-            print(f"Net P&L (After Interest): Rs. {net_pnl:,.2f}")
-            print(f"\nTotal Return:             {(total_pnl/total_investment*100):.2f}%")
-            print(f"Net Return:               {(net_pnl/total_investment*100):.2f}%")
-
-        print("="*60)
+        print(f"Interest Analysis: {interest_path}")
 
         return {
             'portfolio_summary': portfolio_summary,
