@@ -1,29 +1,21 @@
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
 import os
-import datetime
 from enum import Enum, auto
-from functools import partial
 from dotenv import load_dotenv
 
-from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ConversationHandler, MessageHandler, filters
 from telegram.ext._contexttypes import ContextTypes
-from telegram.constants import ChatAction
-
-from src.database import User, get_db
-from src.database import Scripts, Tracker
 
 from src.core.nepse import get_script_ltp
-
-from src.utils import check_time_delta, is_price_in_range, valid_day_time, nepal_tz
+from src.infrastructure.db.session import get_db
+from src.modules.alerts import AlertEvaluator, TrackerService
+from src.modules.messaging import MarketMessageService
+from src.infrastructure.db.repositories import ScriptRepository, TrackerRepository, UserRepository
 import logging
 
 load_dotenv()
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class TrackerStates(Enum):
@@ -39,13 +31,15 @@ ptb = (
     .read_timeout(7)
     .get_updates_read_timeout(42)
     .build()
+    if os.getenv("TELEGRAM_BOT_TOKEN")
+    else None
 )
 
 
 async def process_ticker(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ticker = update.message.text.strip().upper()
     async with get_db() as db:
-        script = (await db.execute(select(Scripts).filter(Scripts.ticker == ticker))).scalars().first()
+        script = await ScriptRepository(db).get_by_ticker(ticker)
         if not script:
             message = await update.message.reply_text(f"Script with ticker {ticker} not found.\nPlease enter the valid stock ticker (e.g., AHPC):")
             context.user_data["message_ids"].extend([update.message.message_id, message.message_id])
@@ -82,36 +76,46 @@ async def process_delta(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         async with get_db() as db:
             ticker, script_id, price, delta = context.user_data["ticker"],context.user_data["script_id"], context.user_data["price"], context.user_data["delta"]
-            user = (await db.execute(select(User).filter(User.chat_id == update.effective_user.id))).scalars().first()
-            tracker = Tracker(user_id=user.id, script_id=script_id, price=price, price_delta=delta)
-            await db.add(tracker)
-            await db.commit()
+            tracker_service = TrackerService(db)
+            tracker, _, user = await tracker_service.create_tracker(
+                chat_id=update.effective_user.id,
+                username=update.effective_user.first_name,
+                ticker=ticker,
+                price=price,
+                delta=delta,
+            )
         await update.message.reply_text(f"Tracker set for {ticker}: Target {price:,.2f}, Δ {delta}%")
         context.user_data["message_ids"].extend([update.message.message_id])
     except Exception as e:
-        print(f"Failed to add tracker: {e}")
+        logger.exception("Failed to add tracker")
     try:
         await context.bot.delete_messages(chat_id=update.effective_chat.id, message_ids=context.user_data["message_ids"])
     except Exception as e:
-        print(f"Failed to delete messages: {e}")  # Log any issues
+        logger.warning("Failed to delete tracker setup messages: %s", e)
     context.bot_data["paused_users"].remove(user.id)
     return ConversationHandler.END
     
 async def send_tracker_alert(tracker_id: int , chat_id: int):
+    if ptb is None:
+        return
     async with get_db() as db:
-        tracker = (await db.execute(select(Tracker).filter(Tracker.id == tracker_id).options(selectinload(Tracker.script).selectinload(Scripts.script_details)))).scalars().first()
+        tracker_repo = TrackerRepository(db)
+        tracker = await tracker_repo.get_by_id(tracker_id)
         ltp = tracker.script.script_details.last_traded_price
         updated_at = tracker.script.script_details.updated_at
-        alert_price = tracker.price
-        price_delta = tracker.price_delta
         last_alert_message_id = tracker.alert_message_id
-
-        if is_price_in_range(alert_price, ltp, price_delta) or (ltp>=alert_price and alert_price>100):
+        decision = AlertEvaluator().should_alert(
+            target_price=tracker.price,
+            current_price=ltp,
+            delta_percent=tracker.price_delta,
+            last_alert_time=tracker.triggerd_at,
+        )
+        if decision.should_alert:
             if last_alert_message_id:
                 try:
                     await ptb.bot.delete_message(chat_id, last_alert_message_id)
                 except Exception as e:
-                    print(f"Failed to delete message: {e}")
+                    logger.warning("Failed to delete previous tracker alert message: %s", e)
             alert_message = (
                     f"<b>Price Alert: <code>{tracker.script.ticker}</code></b>\n\n"
                     f"<b>LTP:</b> <code>{ltp:,.2f}</code>\n"
@@ -119,47 +123,38 @@ async def send_tracker_alert(tracker_id: int , chat_id: int):
                     f"<b>Time:</b> <code>{updated_at.strftime('%Y-%m-%d %H:%M:%S')}</code>\n"
                 )
             message = await ptb.bot.send_message(chat_id, alert_message, parse_mode="HTML")
-            tracker.alert_message_id = message.message_id
-            tracker.triggerd_at = datetime.datetime.now(nepal_tz)
-        await db.commit()
+            await TrackerService(db).mark_alert_sent(tracker, message.message_id)
 
 async def check_trackers(context: ContextTypes.DEFAULT_TYPE):
     async with get_db() as db:
-        users = (await db.execute(select(User).join(Tracker).distinct().options(selectinload(User.trackers)))).scalars().all()
+        users = await UserRepository(db).list_with_trackers()
         for user in users:
             if user.id in context.bot_data.get("paused_users", set()):
                 continue
-            tasks = []
             for tracker in user.trackers:
-                last_alert_time = tracker.triggerd_at
-                if last_alert_time and not check_time_delta(last_alert_time, 300):
-                    continue
-                tasks.append(asyncio.create_task(send_tracker_alert(tracker.id, user.chat_id)))
+                asyncio.create_task(send_tracker_alert(tracker.id, user.chat_id))
 
  
 
 async def start(update, _: ContextTypes.DEFAULT_TYPE):
+    if ptb is None:
+        return
     async with get_db() as db:
-        user = (await db.execute(select(User).filter(User.chat_id == update.effective_user.id))).scalars().first()
+        tracker_service = TrackerService(db)
+        user = await UserRepository(db).get_by_chat_id(update.effective_user.id)
         try:
             await ptb.bot.delete_message(update.effective_user.id, update.message.message_id)
         except Exception as e:
-            print(f"Failed to delete message: {e}") 
+            logger.warning("Failed to delete /start message: %s", e)
         if user:
             return await update.message.reply_text(f"You are already registered.")
-        user = User(chat_id=update.effective_user.id, username=update.effective_user.first_name)
-        await db.add(user)
-        await db.commit()
+        await tracker_service.ensure_user(update.effective_user.id, update.effective_user.first_name)
         await update.message.reply_text(f"Welcome to NEPSE Price Tracker {update.effective_user.first_name}!")
 
 async def add_tracker(update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     async with get_db() as db:
-        user = (await db.execute(select(User).filter(User.chat_id == user_id))).scalars().first()
-        if not user:
-            user = User(chat_id=user_id, username=update.effective_user.first_name)
-            db.add(user)
-            await db.commit()
+        user = await TrackerService(db).ensure_user(user_id, update.effective_user.first_name)
     if "paused_users" not in context.bot_data:
         context.bot_data["paused_users"] = set()
     context.bot_data["paused_users"].add(user.id)
@@ -170,12 +165,12 @@ async def add_tracker(update, context: ContextTypes.DEFAULT_TYPE):
 
 async def get_trackers(update, context: ContextTypes.DEFAULT_TYPE):
     async with get_db() as db:
-        user = (await db.execute(select(User).filter(User.chat_id == update.effective_user.id))).scalars().first()
-        trackers = (await db.execute(select(Tracker).filter(Tracker.user_id == user.id).options(selectinload(Tracker.script)))).scalars().all()
+        user = await UserRepository(db).get_by_chat_id(update.effective_user.id)
+        trackers = await TrackerService(db).list_trackers(update.effective_user.id)
         try:
             await ptb.bot.delete_message(user.chat_id, update.message.message_id)
         except Exception as e:
-            print(f"Failed to delete message: {e}") 
+            logger.warning("Failed to delete /trackers message: %s", e)
         if not trackers:
             return await update.message.reply_text("You don't have any trackers.")
         tracker_info = "<b>Trackers:</b>\n\n"
@@ -188,53 +183,42 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await context.bot.delete_messages(chat_id=update.effective_chat.id, message_ids=context.user_data["message_ids"])
     except Exception as e:
-        print(f"Failed to delete messages: {e}")
-    finally:
-        async with get_db() as db:
-            user = (await db.execute(select(User).filter(User.chat_id == update.effective_user.id))).scalars().first()
-            if user:
-                context.bot_data["paused_users"].remove(user.id)
-        return ConversationHandler.END
+        logger.warning("Failed to delete cancelled tracker messages: %s", e)
+    async with get_db() as db:
+        user = await UserRepository(db).get_by_chat_id(update.effective_user.id)
+        if user:
+            context.bot_data["paused_users"].remove(user.id)
+    return ConversationHandler.END
 
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ticker = update.message.text.split()[0].upper()
     try:
         async with get_db() as db:
-            script = (await db.execute(select(Scripts).filter(Scripts.ticker == ticker).options(selectinload(Scripts.script_details)))).scalars().first()
+            script = await ScriptRepository(db).get_by_ticker(ticker, with_details=True)
             if not script:
                 return await update.message.reply_text(f"Script with ticker {ticker} not found.")
             ltp = await get_script_ltp(db, script)
-            updated_at = script.script_details.updated_at
-            open_price = script.script_details.open_price
-            high_price_low_price = script.script_details.high_price_low_price
-            week_52_high_low = script.script_details.week_52_high_low
             if not ltp:
                 return await update.message.reply_text(f"Failed to fetch LTP for {script.ticker}. Please try again later.")
     except Exception as e:
         return await update.message.reply_text(f"Failed to fetch LTP: {e}")
-    message = (
-        f"<b>{script.ticker}</b>\n"
-        f"<b>{"-"*30}</b>\n"
-        f"📌 <b>LTP:</b> <code>{ltp:,.2f}</code>\n"
-        f"📌 <b>Open:</b> <code>{open_price:,.2f}</code>\n"
-        f"📌 <b>High - Low:</b> <code>{high_price_low_price}</code>\n"
-        f"📌 <b>Time:</b> <code>{updated_at.strftime('%Y-%m-%d %H:%M:%S')}</code>\n"
-    )
+    message = MarketMessageService().format_telegram_snapshot(script, ltp)
     return await context.bot.send_message(update.effective_chat.id, message, parse_mode="HTML")
 
 TICKER, PRICE, DELTA, CANCEL = TrackerStates.TICKER, TrackerStates.PRICE, TrackerStates.DELTA, TrackerStates.CANCEL
-ptb.add_handler(CommandHandler("start", start))
-ptb.add_handler(CommandHandler("trackers", get_trackers))
+if ptb is not None:
+    ptb.add_handler(CommandHandler("start", start))
+    ptb.add_handler(CommandHandler("trackers", get_trackers))
 
-conv_handler = ConversationHandler(
-    entry_points=[CommandHandler("add_tracker", add_tracker),],
-    states={
-        TICKER: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_ticker)],
-        PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_price)],
-        DELTA: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_delta)],
-        CANCEL: [CommandHandler("cancel", cancel)],
-    },
-    fallbacks=[CommandHandler("cancel", cancel)],
-)
-ptb.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
-ptb.add_handler(conv_handler)
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("add_tracker", add_tracker)],
+        states={
+            TICKER: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_ticker)],
+            PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_price)],
+            DELTA: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_delta)],
+            CANCEL: [CommandHandler("cancel", cancel)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+    ptb.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
+    ptb.add_handler(conv_handler)

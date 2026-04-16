@@ -433,78 +433,54 @@
             </div>
         </div>
 
-<!-- Price Switch Viewer Tab -->
-<div x-show="activeTab === 'price_switch'" class="p-6">
-    <template x-if="!priceSwitch.rows.length">
-        <div class="text-center py-12 text-gray-500">
-            Need at least three distinct trade prices to compute a price switch.
-        </div>
-    </template>
-
-    <template x-if="priceSwitch.rows.length">
-        <div>
-            <!-- Price level legend -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div class="rounded border p-4">
-                    <div class="text-xs uppercase text-gray-500 mb-1">Highest Price</div>
-                    <div class="text-xl font-semibold" x-text="formatCurrency(priceSwitch.highest)"></div>
+        <!-- Price Switch Viewer Tab -->
+        <div x-show="activeTab === 'price_switch'" class="p-6">
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+                    <div class="bg-gray-50 rounded-lg p-4">
+                        <div class="text-sm text-gray-600 mb-1">Switch Interval</div>
+                        <div class="text-2xl font-bold text-gray-900" x-text="priceSwitch.stats.switch_interval"></div>
+                    </div>
+                    <div class="bg-gray-50 rounded-lg p-4">
+                        <div class="text-sm text-gray-600 mb-1">After 11:00</div>
+                        <div class="text-2xl font-bold text-gray-900" x-text="priceSwitch.stats.minutes_after_open"></div>
+                    </div>
                 </div>
-                <div class="rounded border p-4">
-                    <div class="text-xs uppercase text-gray-500 mb-1">2nd Highest</div>
-                    <div class="text-xl font-semibold" x-text="formatCurrency(priceSwitch.second)"></div>
-                </div>
-                <div class="rounded border p-4">
-                    <div class="text-xs uppercase text-gray-500 mb-1">3rd Highest</div>
-                    <div class="text-xl font-semibold" x-text="formatCurrency(priceSwitch.third)"></div>
-                </div>
+            <div x-show="!priceSwitch.rows.length" class="text-center py-12 text-gray-500">
+                Need at least three distinct trade prices to compute a price switch.
             </div>
 
-            <!-- Trade rows -->
-            <div class="overflow-x-auto border rounded mb-6">
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead>
-                        <tr class="border-b">
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Contract ID</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">BB</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">SB</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantity</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rate</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-200">
-                        <template x-for="row in priceSwitch.rows" :key="row.label + '-' + row.contract_id">
+            <div x-show="priceSwitch.rows.length">
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
                             <tr>
-                                <td class="px-4 py-3 text-sm" x-text="row.contract_id"></td>
-                                <td class="px-4 py-3 text-sm" x-text="row.buyer_member_id"></td>
-                                <td class="px-4 py-3 text-sm" x-text="row.seller_member_id"></td>
-                                <td class="px-4 py-3 text-sm" x-text="formatNumber(row.contract_quantity)"></td>
-                                <td class="px-4 py-3 text-sm font-medium" x-text="formatCurrency(row.contract_rate)"></td>
-                                <td class="px-4 py-3 text-sm" x-text="formatCurrency(row.contract_amount)"></td>
-                                <td class="px-4 py-3 text-sm font-mono" x-text="formatTime(row.trade_time)"></td>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contract ID</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BB</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SB</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rate</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
                             </tr>
-                        </template>
-                    </tbody>
-                </table>
-            </div>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            <template x-for="row in priceSwitch.rows" :key="row.label + '-' + row.contract_id">
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="row.contract_id"></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="row.buyer_member_id"></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="row.seller_member_id"></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="formatNumber(row.contract_quantity)"></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900" x-text="formatCurrency(row.contract_rate)"></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="formatCurrency(row.contract_amount)"></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono" x-text="formatTime(row.trade_time)"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
 
-            <!-- Stats -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="rounded border p-5">
-                    <div class="text-xs uppercase text-gray-500 mb-2">Switch Interval</div>
-                    <div class="text-2xl font-semibold" x-text="priceSwitch.stats.switchInterval"></div>
-                    <div class="text-xs text-gray-500 mt-1" x-text="priceSwitch.stats.switchIntervalDetail"></div>
-                </div>
-                <div class="rounded border p-5">
-                    <div class="text-xs uppercase text-gray-500 mb-2">Minutes after 11:00:00</div>
-                    <div class="text-2xl font-semibold" x-text="priceSwitch.stats.minutesAfter11"></div>
-                    <div class="text-xs text-gray-500 mt-1" x-text="priceSwitch.stats.minutesAfter11Detail"></div>
-                </div>
             </div>
         </div>
-    </template>
-</div>
     </div>
 
     <!-- No Date Selected Message -->
@@ -563,14 +539,16 @@ function floorsheetViewer() {
         // Price Switch Viewer state
         priceSwitch: {
             rows: [],
-            highest: 0,
-            second: 0,
-            third: 0,
+            levels: {
+                highest: null,
+                second: null,
+                third: null
+            },
             stats: {
-                switchInterval: '—',
-                switchIntervalDetail: '',
-                minutesAfter11: '—',
-                minutesAfter11Detail: ''
+                switch_interval: '—',
+                switch_interval_detail: '',
+                minutes_after_open: '—',
+                minutes_after_open_detail: ''
             }
         },
 
@@ -650,7 +628,7 @@ function floorsheetViewer() {
             const data = await response.json();
             this.floorsheetData = data.floorsheet || [];
             this.computeBrokerSides();
-            this.computePriceSwitch();
+            await this.loadPriceSwitchData();
         },
 
         // Load summary data
@@ -674,6 +652,23 @@ function floorsheetViewer() {
                 ...row,
                 percentage: totalQty > 0 ? (row.quantity / totalQty * 100) : 0
             }));
+        },
+
+        async loadPriceSwitchData() {
+            const params = new URLSearchParams({ date: this.selectedDate });
+            if (this.selectedTicker) params.append('ticker', this.selectedTicker);
+            const response = await fetch(`/api/floorsheet/price-switch?${params}`);
+            const data = await response.json();
+            this.priceSwitch = data || {
+                rows: [],
+                levels: { highest: null, second: null, third: null },
+                stats: {
+                    switch_interval: '—',
+                    switch_interval_detail: '',
+                    minutes_after_open: '—',
+                    minutes_after_open_detail: ''
+                }
+            };
         },
 
         // Sort floorsheet data
@@ -768,6 +763,15 @@ function floorsheetViewer() {
                 return parts[0] + '.' + parts[1].substring(0, 3);
             }
             return value;
+        },
+
+        priceSwitchBadgeClass(accent) {
+            const styles = {
+                slate: 'bg-slate-100 text-slate-700',
+                amber: 'bg-amber-100 text-amber-800',
+                emerald: 'bg-emerald-100 text-emerald-800'
+            };
+            return styles[accent] || 'bg-gray-100 text-gray-700';
         },
 
         // Floorsheet pagination methods
@@ -881,135 +885,6 @@ function floorsheetViewer() {
             });
         },
 
-        // --- Price Switch Viewer ---
-        _parseTimeSeconds(t) {
-            if (!t) return null;
-            const [hms, frac] = t.split('.');
-            const parts = hms.split(':');
-            if (parts.length !== 3) return null;
-            const h = parseInt(parts[0], 10);
-            const m = parseInt(parts[1], 10);
-            const s = parseInt(parts[2], 10);
-            const ms = frac ? parseFloat('0.' + frac) : 0;
-            return h * 3600 + m * 60 + s + ms;
-        },
-
-        _formatDuration(totalSeconds) {
-            if (totalSeconds == null || isNaN(totalSeconds)) return '—';
-            const sign = totalSeconds < 0 ? '-' : '';
-            const s = Math.abs(totalSeconds);
-            const hrs = Math.floor(s / 3600);
-            const mins = Math.floor((s % 3600) / 60);
-            const secs = (s % 60);
-            const secsStr = secs.toFixed(3).padStart(6, '0');
-            if (hrs > 0) {
-                return `${sign}${hrs}h ${mins}m ${secs.toFixed(1)}s`;
-            }
-            if (mins > 0) {
-                return `${sign}${mins}m ${secs.toFixed(1)}s`;
-            }
-            return `${sign}${secsStr}s`;
-        },
-
-        computePriceSwitch() {
-            const reset = {
-                rows: [],
-                highest: 0,
-                second: 0,
-                third: 0,
-                stats: {
-                    switchInterval: '—',
-                    switchIntervalDetail: '',
-                    minutesAfter11: '—',
-                    minutesAfter11Detail: ''
-                }
-            };
-
-            if (!this.floorsheetData.length) {
-                this.priceSwitch = reset;
-                return;
-            }
-
-            const uniqueRates = [...new Set(
-                this.floorsheetData.map(r => parseFloat(r.contract_rate)).filter(v => !isNaN(v))
-            )].sort((a, b) => b - a);
-
-            if (uniqueRates.length < 3) {
-                this.priceSwitch = reset;
-                return;
-            }
-
-            const [highest, second, third] = uniqueRates;
-            const byTime = [...this.floorsheetData].sort((a, b) =>
-                (a.trade_time || '').localeCompare(b.trade_time || '')
-            );
-
-            const firstAt = (rate) => byTime.find(r => parseFloat(r.contract_rate) === rate);
-            const lastAt = (rate) => {
-                for (let i = byTime.length - 1; i >= 0; i--) {
-                    if (parseFloat(byTime[i].contract_rate) === rate) return byTime[i];
-                }
-                return null;
-            };
-
-            const firstHighest = firstAt(highest);
-            const firstSecond = firstAt(second);
-            const lastThird = lastAt(third);
-
-            const tagged = [];
-            if (lastThird) tagged.push({
-                ...lastThird,
-                label: '3rd · last',
-                badgeClass: 'bg-slate-200 text-slate-700',
-                rowClass: 'bg-slate-50/60'
-            });
-            if (firstSecond) tagged.push({
-                ...firstSecond,
-                label: '2nd · first',
-                badgeClass: 'bg-amber-200 text-amber-800',
-                rowClass: 'bg-amber-50/60'
-            });
-            if (firstHighest) tagged.push({
-                ...firstHighest,
-                label: '1st · first',
-                badgeClass: 'bg-emerald-200 text-emerald-800',
-                rowClass: 'bg-emerald-50/60'
-            });
-
-            tagged.sort((a, b) => (a.trade_time || '').localeCompare(b.trade_time || ''));
-
-            // Stats
-            let switchInterval = '—';
-            let switchIntervalDetail = '';
-            if (lastThird && firstSecond) {
-                const t1 = this._parseTimeSeconds(lastThird.trade_time);
-                const t2 = this._parseTimeSeconds(firstSecond.trade_time);
-                if (t1 != null && t2 != null) {
-                    const diff = t2 - t1;
-                    switchInterval = this._formatDuration(diff);
-                    switchIntervalDetail = `${this.formatTime(lastThird.trade_time)}  →  ${this.formatTime(firstSecond.trade_time)}`;
-                }
-            }
-
-            let minutesAfter11 = '—';
-            let minutesAfter11Detail = '';
-            if (lastThird) {
-                const t = this._parseTimeSeconds(lastThird.trade_time);
-                const base = 11 * 3600;
-                if (t != null) {
-                    const diffMin = Math.floor((t - base) / 60);
-                    const diffSec = ((t - base) % 60).toFixed(3);
-                    minutesAfter11 = `${diffMin}m ${diffSec}s`;
-                    minutesAfter11Detail = `trade at ${this.formatTime(lastThird.trade_time)}`;
-                }
-            }
-
-            this.priceSwitch = {
-                rows: tagged,
-                highest, second, third,
-                stats: { switchInterval, switchIntervalDetail, minutesAfter11, minutesAfter11Detail }
-            };
-        }
     }
 }
 </script>

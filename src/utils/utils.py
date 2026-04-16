@@ -1,41 +1,13 @@
-
-import datetime
 from pathlib import Path
-import dotenv
-import os
-from cryptography.fernet import Fernet
 
+from src.modules.alerts.service import is_price_in_range
+from src.shared.security import decrypt_password, encrypt_password
+from src.shared.time import check_time_delta, nepal_tz, valid_market_time
 
-nepal_tz = datetime.timezone(datetime.timedelta(hours=5, minutes=45))
 
 def get_dir_path() -> Path:
     return Path(__file__).resolve().parent.parent
 
-def valid_day_time() ->  bool:
-    now = datetime.datetime.now()
-    if now.weekday() in [6,0,1,2,3] and 9 <= now.hour < 15:
-        return True
-    return False
 
-def is_price_in_range(target: float, current: float, delta_percent: float) -> bool:
-        delta = current * (delta_percent / 100)
-        return current - delta <= target <= current + delta
-        
-def check_time_delta(last_alert_time: datetime, delta: int) -> bool:
-    if last_alert_time is None:
-        return True
-    return (datetime.datetime.now(nepal_tz) - last_alert_time.replace(tzinfo=nepal_tz)).seconds >= delta
-
-def get_fernet_key():
-    dotenv.load_dotenv()
-    return bytes(os.getenv("MEROSHARE_KEY"), 'utf-8')    
-
-def encrypt_password(password: str) -> str:
-    fernet = Fernet(get_fernet_key())
-    encrypted_password = fernet.encrypt(password.encode())
-    return encrypted_password.decode()
-
-def decrypt_password(encrypted_password: str) -> str:
-    fernet = Fernet(get_fernet_key())
-    decrypted_password = fernet.decrypt(encrypted_password.encode())
-    return decrypted_password.decode()
+def valid_day_time() -> bool:
+    return valid_market_time()
