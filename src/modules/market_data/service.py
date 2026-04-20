@@ -107,12 +107,28 @@ class FloorsheetQueryService:
         return {"dates": dates, "count": len(dates)}
 
     async def get_companies(self, date: str | None = None) -> dict:
-        rows = await self.floorsheets.query_rows(date=date)
-        companies = sorted({row.stock_symbol for row in rows})
+        companies = await self.floorsheets.list_companies(date=date)
         return {"companies": companies, "count": len(companies)}
 
-    async def get_floorsheet_data(self, date: str | None = None, ticker: str | None = None) -> dict:
-        rows = await self.floorsheets.query_rows(date=date, ticker=ticker)
+    async def get_floorsheet_data(
+        self,
+        date: str | None = None,
+        ticker: str | None = None,
+        *,
+        page: int = 1,
+        page_size: int = 100,
+        sort_column: str = "trade_time",
+        sort_direction: str = "asc",
+    ) -> dict:
+        total = await self.floorsheets.count_rows(date=date, ticker=ticker)
+        rows = await self.floorsheets.query_rows_page(
+            date=date,
+            ticker=ticker,
+            page=page,
+            page_size=page_size,
+            sort_column=sort_column,
+            sort_direction=sort_direction,
+        )
         payload = [
             {
                 "contract_id": row.Floorsheet.contract_id,
@@ -129,7 +145,19 @@ class FloorsheetQueryService:
             }
             for row in rows
         ]
-        return {"floorsheet": payload, "count": len(payload)}
+        total_pages = math.ceil(total / page_size) if total else 1
+        return {
+            "floorsheet": payload,
+            "count": len(payload),
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "sort": {
+                "column": sort_column,
+                "direction": sort_direction,
+            },
+        }
 
     async def get_floorsheet_summary(self, date: str, ticker: str | None = None) -> dict:
         rows = await self.floorsheets.query_rows(date=date, ticker=ticker)
@@ -198,6 +226,69 @@ class FloorsheetQueryService:
                 "total_trades": sum(s["trades"] for s in summaries),
                 "total_quantity": sum(s["quantity"] for s in summaries),
                 "total_amount": round(sum(s["total_amount"] for s in summaries), 2),
+            },
+        }
+
+    async def get_broker_side_summary(self, date: str, ticker: str | None = None) -> dict:
+        rows = await self.floorsheets.query_rows(date=date, ticker=ticker)
+        buyer_agg: dict[str, dict] = {}
+        seller_agg: dict[str, dict] = {}
+        buyer_total = 0
+        seller_total = 0
+
+        for row in rows:
+            qty = row.Floorsheet.contract_quantity
+            amt = row.Floorsheet.contract_amount
+
+            buyer_id = row.buyer_member_id
+            if buyer_id:
+                current = buyer_agg.setdefault(
+                    buyer_id,
+                    {
+                        "broker_id": buyer_id,
+                        "broker_name": row.buyer_broker_name,
+                        "quantity": 0,
+                        "total_amount": 0.0,
+                    },
+                )
+                current["quantity"] += qty
+                current["total_amount"] += amt
+                buyer_total += qty
+
+            seller_id = row.seller_member_id
+            if seller_id:
+                current = seller_agg.setdefault(
+                    seller_id,
+                    {
+                        "broker_id": seller_id,
+                        "broker_name": row.seller_broker_name,
+                        "quantity": 0,
+                        "total_amount": 0.0,
+                    },
+                )
+                current["quantity"] += qty
+                current["total_amount"] += amt
+                seller_total += qty
+
+        def _finalize(agg: dict[str, dict], total: int) -> list[dict]:
+            rows = []
+            for item in agg.values():
+                quantity = item["quantity"]
+                rows.append(
+                    {
+                        **item,
+                        "average_price": item["total_amount"] / quantity if quantity > 0 else 0,
+                        "percentage": (quantity / total * 100) if total > 0 else 0,
+                    }
+                )
+            return rows
+
+        return {
+            "buyer": _finalize(buyer_agg, buyer_total),
+            "seller": _finalize(seller_agg, seller_total),
+            "totals": {
+                "buyer": buyer_total,
+                "seller": seller_total,
             },
         }
 

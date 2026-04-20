@@ -1,219 +1,212 @@
-import json
 import logging
-from datetime import datetime
-from typing import Any, Optional
+from datetime import date, datetime
+from math import ceil
+from typing import Any, Awaitable, Callable
 
-import httpx
-from wasmtime import Instance, Module, Store
+from nepse import AsyncNepse
 
-from src.config.settings import config
 
 logger = logging.getLogger(__name__)
 
 
 class NEPSE:
-    """Centralized NEPSE API client with auth and endpoint helpers."""
+    """Compatibility adapter around the upstream unofficial nepse library."""
 
     def __init__(self):
-        self.base_url = "https://www.nepalstock.com"
-        self.access_token: Optional[str] = None
-        self.refresh_token: Optional[str] = None
-        self.salt_values: list[int] = []
-        self.original_salt_values: list[int] = []
-        self.market_status_id: Optional[int] = None
-        self.client: Optional[httpx.AsyncClient] = None
-        self.headers = {
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:149.0) Gecko/20100101 Firefox/149.0",
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Content-Type": "application/json",
-            "Origin": self.base_url,
-            "Referer": f"{self.base_url}/today-price",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Sec-GPC": "1",
-            "Connection": "keep-alive",
-            "Sec-Fetch-Dest": "empty",
-            "Sec-Fetch-Mode": "cors",
-            "Sec-Fetch-Site": "same-origin",
-            "TE": "trailers",
-        }
-        self._setup_wasm()
+        self.client = AsyncNepse()
+        self.client.setTLSVerification(False)
 
     async def __aenter__(self) -> "NEPSE":
-        await self._ensure_client()
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
         await self.aclose()
 
     async def aclose(self) -> None:
-        if self.client is not None:
-            await self.client.aclose()
-            self.client = None
+        http_client = getattr(self.client, "client", None)
+        if http_client is not None and hasattr(http_client, "aclose"):
+            await http_client.aclose()
 
-    async def _ensure_client(self) -> httpx.AsyncClient:
-        if self.client is None:
-            self.client = httpx.AsyncClient(timeout=30.0, verify=False)
-        return self.client
+    async def _call_with_retry(
+        self,
+        fn: Callable[[], Awaitable[Any]],
+        *,
+        label: str,
+        retries: int = 2,
+    ) -> Any:
+        last_error: Exception | None = None
+        for attempt in range(1, retries + 1):
+            try:
+                return await fn()
+            except Exception as exc:
+                last_error = exc
+                logger.warning("%s attempt %s/%s failed: %s", label, attempt, retries, exc)
 
-    def _setup_wasm(self) -> None:
-        wasm_path = config.data_dir / "css.wasm"
-        if not wasm_path.exists():
-            logger.info("Downloading NEPSE wasm asset to %s", wasm_path)
-            with httpx.Client(timeout=30.0, verify=False) as client:
-                response = client.get(
-                    f"{self.base_url}/assets/prod/css.wasm",
-                    headers=self.headers,
-                )
-                response.raise_for_status()
-                wasm_path.write_bytes(response.content)
-
-        self.wasm_store = Store()
-        self.wasm_module = Module.from_file(self.wasm_store.engine, str(wasm_path))
-        self.wasm_instance = Instance(self.wasm_store, self.wasm_module, [])
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError(f"{label} failed without raising an exception")
 
     async def get_market_status(self) -> bool:
         try:
-            client = await self._ensure_client()
-            response = await client.get(
-                f"{self.base_url}/api/nots/nepse-data/market-open",
-                headers=self.get_auth_headers(),
-            )
-            response.raise_for_status()
-            data = response.json()
-            self.market_status_id = data.get("id")
-            return self.market_status_id is not None
-        except Exception as exc:
+            return bool(await self._call_with_retry(self.client.isNepseOpen, label="market status"))
+        except Exception:
             logger.exception("Failed to get NEPSE market status")
             return False
 
-    async def authenticate(self) -> bool:
-        try:
-            client = await self._ensure_client()
-            response = await client.get(
-                f"{self.base_url}/api/authenticate/prove",
-                headers=self.headers,
-            )
-            response.raise_for_status()
-            data = response.json()
-            self.access_token = data.get("accessToken")
-            self.refresh_token = data.get("refreshToken")
-            self.salt_values = [
-                data.get("salt1", 0),
-                data.get("salt2", 0),
-                data.get("salt3", 0),
-                data.get("salt4", 0),
-                data.get("salt5", 0),
-            ]
-            self.original_salt_values = self.salt_values.copy()
-            self.access_token = self._trim_access_token(self.access_token, self.salt_values)
-            self.refresh_token = self._trim_refresh_token(self.refresh_token, self.salt_values)
-            await self.get_market_status()
-            logger.info("Authenticated with NEPSE API")
-            return bool(self.access_token)
-        except Exception as exc:
-            logger.exception("NEPSE authentication failed")
-            return False
-
-    async def refresh_access_token(self) -> bool:
-        if not self.refresh_token:
-            return await self.authenticate()
-
-        try:
-            logger.info("Refreshing NEPSE access token")
-            client = await self._ensure_client()
-            headers = {**self.headers, "Authorization": f"Salter {self.refresh_token}"}
-            response = await client.post(
-                f"{self.base_url}/api/authenticate/refresh-token",
-                headers=headers,
-            )
-            response.raise_for_status()
-            data = response.json()
-            self.access_token = data.get("accessToken")
-            self.refresh_token = data.get("refreshToken")
-            self.salt_values = [
-                data.get("salt1", 0),
-                data.get("salt2", 0),
-                data.get("salt3", 0),
-                data.get("salt4", 0),
-                data.get("salt5", 0),
-            ]
-            self.access_token = self._trim_access_token(self.access_token, self.salt_values)
-            self.refresh_token = self._trim_refresh_token(self.refresh_token, self.salt_values)
-            return bool(self.access_token)
-        except Exception as exc:
-            logger.exception("NEPSE token refresh failed")
-            return await self.authenticate()
-
-    async def _ensure_authenticated(self) -> bool:
-        if self.access_token:
-            return True
-        return await self.authenticate()
-
-    async def _post_authorized(
-        self,
-        path: str,
-        *,
-        params: Optional[dict[str, Any]] = None,
-        payload: Optional[dict[str, Any]] = None,
-        referer_path: str = "/today-price",
-    ) -> httpx.Response:
-        client = await self._ensure_client()
-        if not await self._ensure_authenticated():
-            raise RuntimeError("NEPSE authentication failed")
-
-        headers = {
-            **self.get_auth_headers(),
-            "Referer": f"{self.base_url}{referer_path}",
+    def _normalize_live_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        security_id = row.get("securityId")
+        return {
+            "symbol": row.get("symbol"),
+            "securityId": int(security_id) if security_id is not None else None,
+            "securityName": row.get("securityName"),
+            "openPrice": row.get("openPrice"),
+            "highPrice": row.get("highPrice"),
+            "lowPrice": row.get("lowPrice"),
+            "closePrice": row.get("lastTradedPrice") or row.get("previousClose"),
+            "lastUpdatedPrice": row.get("lastTradedPrice"),
+            "totalTradedQuantity": row.get("totalTradeQuantity", 0),
+            "totalTrades": 0,
+            "previousDayClosePrice": row.get("previousClose"),
+            "averageTradedPrice": row.get("averageTradedPrice"),
+            "marketCapitalization": None,
+            "fiftyTwoWeekHigh": None,
+            "fiftyTwoWeekLow": None,
+            "lastUpdatedDateTime": row.get("lastUpdatedDateTime"),
         }
-        body = json.dumps(payload or {"id": self.calculate_request_id()})
-        response = await client.post(
-            f"{self.base_url}{path}",
-            params=params,
-            headers=headers,
-            content=body,
-        )
 
-        if response.status_code == 401 and await self.refresh_access_token():
-            logger.warning("NEPSE request returned 401 for %s, retrying after token refresh", path)
-            headers = {
-                **self.get_auth_headers(),
-                "Referer": f"{self.base_url}{referer_path}",
-            }
-            body = json.dumps(payload or {"id": self.calculate_request_id()})
-            response = await client.post(
-                f"{self.base_url}{path}",
-                params=params,
-                headers=headers,
-                content=body,
+    async def _fetch_live_market_rows(self) -> list[dict[str, Any]]:
+        rows = await self._call_with_retry(self.client.getLiveMarket, label="live market")
+        if not isinstance(rows, list):
+            return []
+        return [self._normalize_live_row(row) for row in rows]
+
+    async def _enrich_row_with_company_details(self, row: dict[str, Any]) -> dict[str, Any]:
+        symbol = row.get("symbol")
+        if not symbol:
+            return row
+
+        details = await self._call_with_retry(
+            lambda: self.client.getCompanyDetails(symbol),
+            label=f"company details for {symbol}",
+        )
+        daily = details.get("securityDailyTradeDto") or {}
+        security = details.get("security") or {}
+
+        if daily:
+            security_id = daily.get("securityId", row.get("securityId"))
+            row.update(
+                {
+                    "securityId": int(security_id) if security_id is not None else row.get("securityId"),
+                    "openPrice": daily.get("openPrice", row.get("openPrice")),
+                    "highPrice": daily.get("highPrice", row.get("highPrice")),
+                    "lowPrice": daily.get("lowPrice", row.get("lowPrice")),
+                    "closePrice": daily.get("closePrice", row.get("closePrice")),
+                    "lastUpdatedPrice": daily.get("lastTradedPrice", row.get("lastUpdatedPrice")),
+                    "totalTradedQuantity": daily.get("totalTradeQuantity", row.get("totalTradedQuantity", 0)),
+                    "totalTrades": daily.get("totalTrades", row.get("totalTrades", 0)),
+                    "previousDayClosePrice": daily.get("previousClose", row.get("previousDayClosePrice")),
+                    "fiftyTwoWeekHigh": daily.get("fiftyTwoWeekHigh"),
+                    "fiftyTwoWeekLow": daily.get("fiftyTwoWeekLow"),
+                    "businessDate": daily.get("businessDate"),
+                    "lastUpdatedDateTime": daily.get("lastUpdatedDateTime", row.get("lastUpdatedDateTime")),
+                }
             )
 
-        response.raise_for_status()
-        logger.debug("NEPSE request succeeded: %s params=%s", path, params)
-        return response
+        if security:
+            row["symbol"] = security.get("symbol") or row.get("symbol")
+            row["securityName"] = security.get("securityName") or row.get("securityName")
+
+        row["marketCapitalization"] = details.get("marketCapitalization")
+        row["stockListedShares"] = details.get("stockListedShares")
+        return row
+
+    async def fetch_all_today_price(
+        self,
+        *,
+        business_date: str | None = None,
+        only_tickers: set[str] | None = None,
+        include_details: bool = False,
+    ) -> list[dict[str, Any]]:
+        target_date = business_date or date.today().isoformat()
+        if target_date != date.today().isoformat():
+            logger.warning(
+                "The upstream nepse library does not expose historical today-price pages; using current live market data for requested business_date=%s",
+                target_date,
+            )
+
+        rows = await self._fetch_live_market_rows()
+        if only_tickers is not None:
+            rows = [row for row in rows if row.get("symbol") in only_tickers]
+
+        if include_details:
+            enriched_rows = []
+            for row in rows:
+                try:
+                    enriched_rows.append(await self._enrich_row_with_company_details(row))
+                except Exception:
+                    logger.exception("Failed to enrich company details for ticker=%s", row.get("symbol"))
+                    enriched_rows.append(row)
+            rows = enriched_rows
+
+        return rows
 
     async def fetch_floorsheet(
         self,
         *,
         stock_id: int,
+        symbol: str | None = None,
         business_date: str,
         page: int = 0,
         size: int = 500,
     ) -> dict[str, Any]:
         try:
-            response = await self._post_authorized(
-                "/api/nots/nepse-data/floorsheet",
-                params={
+            if symbol:
+                try:
+                    rows = await self._call_with_retry(
+                        lambda: self.client.getFloorSheetOf(symbol, business_date),
+                        label=f"floorsheet for {symbol} on {business_date}",
+                    )
+                except Exception:
+                    logger.warning(
+                        "Falling back to full floorsheet download for symbol=%s business_date=%s",
+                        symbol,
+                        business_date,
+                    )
+                    rows = await self._call_with_retry(
+                        lambda: self.client.getFloorSheet(show_progress=False, symbol=symbol),
+                        label=f"full floorsheet fallback for {symbol} on {business_date}",
+                    )
+                    rows = [
+                        row
+                        for row in rows
+                        if row.get("stockSymbol") == symbol
+                        and str(row.get("tradeTime", "")).startswith(business_date)
+                    ]
+            else:
+                rows = await self._call_with_retry(
+                    lambda: self.client.getFloorSheet(show_progress=False),
+                    label=f"floorsheet for stock_id={stock_id} on {business_date}",
+                )
+                rows = [
+                    row
+                    for row in rows
+                    if int(row.get("stockId", -1)) == stock_id
+                    and str(row.get("tradeTime", "")).startswith(business_date)
+                ]
+
+            total_pages = max(1, ceil(len(rows) / size)) if rows else 1
+            start = page * size
+            end = start + size
+            return {
+                "floorsheets": {
+                    "content": rows[start:end],
                     "page": page,
                     "size": size,
-                    "stockId": stock_id,
-                    "sort": "contractId,desc",
-                    "businessDate": business_date,
-                },
-                referer_path="/floor-sheet",
-            )
-            return response.json() if response.text else {}
-        except Exception as exc:
+                    "totalPages": total_pages,
+                    "last": end >= len(rows),
+                }
+            }
+        except Exception:
             logger.exception(
                 "Error fetching floorsheet for stock_id=%s business_date=%s",
                 stock_id,
@@ -224,90 +217,24 @@ class NEPSE:
     async def fetch_today_price(
         self,
         *,
-        business_date: Optional[str] = None,
+        business_date: str | None = None,
         page: int = 0,
         size: int = 500,
     ) -> dict[str, Any]:
         target_date = business_date or datetime.now().strftime("%Y-%m-%d")
         try:
-            response = await self._post_authorized(
-                "/api/nots/nepse-data/today-price",
-                params={
-                    "page": page,
-                    "size": size,
-                    "businessDate": target_date,
-                },
-                referer_path="/today-price",
+            rows = await self.fetch_all_today_price(
+                business_date=target_date,
+                include_details=False,
             )
-            return response.json() if response.text else {}
-        except Exception as exc:
+            start = page * size
+            end = start + size
+            return {
+                "content": rows[start:end],
+                "page": page,
+                "size": size,
+                "last": end >= len(rows),
+            }
+        except Exception:
             logger.exception("Error fetching NEPSE today-price for business_date=%s", target_date)
             return {}
-
-    def _trim_access_token(self, token: str, salt_values: list[int]) -> str:
-        s1, s2, s3, s4, s5 = salt_values
-        cdx = self.wasm_instance.exports(self.wasm_store)["cdx"]
-        rdx = self.wasm_instance.exports(self.wasm_store)["rdx"]
-        bdx = self.wasm_instance.exports(self.wasm_store)["bdx"]
-        ndx = self.wasm_instance.exports(self.wasm_store)["ndx"]
-        mdx = self.wasm_instance.exports(self.wasm_store)["mdx"]
-
-        cdx_pos = cdx(self.wasm_store, s1, s2, s3, s4, s5)
-        rdx_pos = rdx(self.wasm_store, s1, s2, s4, s3, s5)
-        bdx_pos = bdx(self.wasm_store, s1, s2, s4, s3, s5)
-        ndx_pos = ndx(self.wasm_store, s1, s2, s4, s3, s5)
-        mdx_pos = mdx(self.wasm_store, s1, s2, s4, s3, s5)
-
-        return (
-            token[:cdx_pos]
-            + token[cdx_pos + 1:rdx_pos]
-            + token[rdx_pos + 1:bdx_pos]
-            + token[bdx_pos + 1:ndx_pos]
-            + token[ndx_pos + 1:mdx_pos]
-            + token[mdx_pos + 1:]
-        )
-
-    def _trim_refresh_token(self, token: str, salt_values: list[int]) -> str:
-        s1, s2, s3, s4, s5 = salt_values
-        cdx = self.wasm_instance.exports(self.wasm_store)["cdx"]
-        rdx = self.wasm_instance.exports(self.wasm_store)["rdx"]
-        bdx = self.wasm_instance.exports(self.wasm_store)["bdx"]
-        ndx = self.wasm_instance.exports(self.wasm_store)["ndx"]
-        mdx = self.wasm_instance.exports(self.wasm_store)["mdx"]
-
-        cdx_pos = cdx(self.wasm_store, s2, s1, s3, s5, s4)
-        rdx_pos = rdx(self.wasm_store, s2, s1, s3, s4, s5)
-        bdx_pos = bdx(self.wasm_store, s2, s1, s4, s3, s5)
-        ndx_pos = ndx(self.wasm_store, s2, s1, s4, s3, s5)
-        mdx_pos = mdx(self.wasm_store, s2, s1, s4, s3, s5)
-
-        return (
-            token[:cdx_pos]
-            + token[cdx_pos + 1:rdx_pos]
-            + token[rdx_pos + 1:bdx_pos]
-            + token[bdx_pos + 1:ndx_pos]
-            + token[ndx_pos + 1:mdx_pos]
-            + token[mdx_pos + 1:]
-        )
-
-    def get_auth_headers(self) -> dict[str, str]:
-        return {**self.headers, "Authorization": f"Salter {self.access_token}"}
-
-    def calculate_request_id(self) -> int:
-        dummy_data = [
-            147, 117, 239, 143, 157, 312, 161, 612, 512, 804, 411, 527, 170, 511, 421, 667, 764, 621, 301, 106,
-            133, 793, 411, 511, 312, 423, 344, 346, 653, 758, 342, 222, 236, 811, 711, 611, 122, 447, 128, 199,
-            183, 135, 489, 703, 800, 745, 152, 863, 134, 211, 142, 564, 375, 793, 212, 153, 138, 153, 648, 611,
-            151, 649, 318, 143, 117, 756, 119, 141, 717, 113, 112, 146, 162, 660, 693, 261, 362, 354, 251, 641,
-            157, 178, 631, 192, 734, 445, 192, 883, 187, 122, 591, 731, 852, 384, 565, 596, 451, 772, 624, 691,
-        ]
-
-        day = datetime.now().day
-        dummy_id = self.market_status_id if self.market_status_id is not None else 1
-        if dummy_id >= len(dummy_data):
-            dummy_id %= len(dummy_data)
-
-        i = dummy_data[dummy_id] + dummy_id + 2 * day
-        index = 1 if i % 10 < 4 else 3
-        salt_values = self.original_salt_values or self.salt_values
-        return i + salt_values[index] * day - salt_values[index - 1]

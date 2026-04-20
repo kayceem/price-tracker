@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import selectinload
 
 from .models import Broker, Floorsheet, MeroShareUser, ScriptDetails, Scripts, Tracker, User
@@ -117,8 +117,43 @@ class FloorsheetRepository:
     def __init__(self, db):
         self.db = db
 
+    def _base_query(self):
+        buyer_broker = Broker.__table__.alias("buyer_broker")
+        seller_broker = Broker.__table__.alias("seller_broker")
+        return (
+            select(
+                Floorsheet,
+                Scripts.ticker.label("stock_symbol"),
+                buyer_broker.c.member_id.label("buyer_member_id"),
+                seller_broker.c.member_id.label("seller_member_id"),
+                buyer_broker.c.name.label("buyer_broker_name"),
+                seller_broker.c.name.label("seller_broker_name"),
+            )
+            .join(Scripts, Floorsheet.script_id == Scripts.id)
+            .outerjoin(buyer_broker, Floorsheet.buyer_broker_id == buyer_broker.c.id)
+            .outerjoin(seller_broker, Floorsheet.seller_broker_id == seller_broker.c.id)
+        )
+
+    def _apply_filters(self, query, date: str | None = None, ticker: str | None = None):
+        filters = []
+        if date:
+            filters.append(Floorsheet.trade_date == date)
+        if ticker:
+            filters.append(Scripts.ticker == ticker)
+        if filters:
+            query = query.filter(and_(*filters))
+        return query
+
     async def list_available_dates(self) -> list[str]:
         result = await self.db.execute(select(Floorsheet.trade_date).distinct().order_by(Floorsheet.trade_date.desc()))
+        return [row[0] for row in result.all()]
+
+    async def list_companies(self, date: str | None = None) -> list[str]:
+        query = select(Scripts.ticker).join(Floorsheet, Floorsheet.script_id == Scripts.id).distinct()
+        if date:
+            query = query.filter(Floorsheet.trade_date == date)
+        query = query.order_by(Scripts.ticker.asc())
+        result = await self.db.execute(query)
         return [row[0] for row in result.all()]
 
     async def exists_for_script_and_date(self, script_id: int, trade_date: str) -> bool:
@@ -131,6 +166,24 @@ class FloorsheetRepository:
         return (await self.db.execute(select(Floorsheet).filter(Floorsheet.contract_id == contract_id))).scalars().first()
 
     async def query_rows(self, date: str | None = None, ticker: str | None = None):
+        query = self._apply_filters(self._base_query(), date=date, ticker=ticker)
+        query = query.order_by(Floorsheet.trade_time.asc())
+        return (await self.db.execute(query)).all()
+
+    async def count_rows(self, date: str | None = None, ticker: str | None = None) -> int:
+        query = self._apply_filters(select(func.count()).select_from(Floorsheet).join(Scripts, Floorsheet.script_id == Scripts.id), date=date, ticker=ticker)
+        return (await self.db.execute(query)).scalar_one()
+
+    async def query_rows_page(
+        self,
+        *,
+        date: str | None = None,
+        ticker: str | None = None,
+        page: int = 1,
+        page_size: int = 100,
+        sort_column: str = "trade_time",
+        sort_direction: str = "asc",
+    ):
         buyer_broker = Broker.__table__.alias("buyer_broker")
         seller_broker = Broker.__table__.alias("seller_broker")
         query = (
@@ -146,14 +199,21 @@ class FloorsheetRepository:
             .outerjoin(buyer_broker, Floorsheet.buyer_broker_id == buyer_broker.c.id)
             .outerjoin(seller_broker, Floorsheet.seller_broker_id == seller_broker.c.id)
         )
-        filters = []
-        if date:
-            filters.append(Floorsheet.trade_date == date)
-        if ticker:
-            filters.append(Scripts.ticker == ticker)
-        if filters:
-            query = query.filter(and_(*filters))
-        query = query.order_by(Floorsheet.trade_time.asc())
+        query = self._apply_filters(query, date=date, ticker=ticker)
+
+        sort_map = {
+            "contract_id": Floorsheet.contract_id,
+            "buyer_member_id": buyer_broker.c.member_id,
+            "seller_member_id": seller_broker.c.member_id,
+            "contract_quantity": Floorsheet.contract_quantity,
+            "contract_rate": Floorsheet.contract_rate,
+            "contract_amount": Floorsheet.contract_amount,
+            "trade_time": Floorsheet.trade_time,
+        }
+        sort_expr = sort_map.get(sort_column, Floorsheet.trade_time)
+        query = query.order_by(sort_expr.desc() if sort_direction == "desc" else sort_expr.asc(), Floorsheet.contract_id.asc())
+        offset = max(page - 1, 0) * page_size
+        query = query.offset(offset).limit(page_size)
         return (await self.db.execute(query)).all()
 
 
@@ -163,4 +223,3 @@ class MeroShareUserRepository:
 
     async def get_by_username(self, username: str) -> MeroShareUser | None:
         return (await self.db.execute(select(MeroShareUser).filter(MeroShareUser.username == username))).scalars().first()
-

@@ -19,6 +19,9 @@ class FloorsheetFetcher:
     def __init__(self):
         self.nepse = NEPSE()
 
+    async def aclose(self) -> None:
+        await self.nepse.aclose()
+
     async def get_stock_id(self, ticker: str) -> Optional[int]:
         """Get NEPSE stock ID from database by ticker symbol."""
         async with get_db() as db:
@@ -72,6 +75,7 @@ class FloorsheetFetcher:
         try:
             data = await self.nepse.fetch_floorsheet(
                 stock_id=stock_id,
+                symbol=ticker,
                 business_date=date,
                 page=page,
                 size=size,
@@ -279,89 +283,89 @@ class FloorsheetFetcher:
             logger.warning("Stock ID not found for ticker=%s", ticker)
             return {"ticker": ticker, "date": date, "status": "error", "reason": "stock_not_found"}
 
-        try:
-            logger.info("Fetching floorsheet for ticker=%s stock_id=%s business_date=%s", ticker, stock_id, date)
-            page = 0
-            total_new = 0
-            total_updated = 0
-            total_skipped = 0
+        logger.info("Fetching floorsheet for ticker=%s stock_id=%s business_date=%s", ticker, stock_id, date)
+        page = 0
+        total_new = 0
+        total_updated = 0
+        total_skipped = 0
 
-            while True:
-                data = await self.fetch_floorsheet(stock_id, ticker, date, page)
+        while True:
+            data = await self.fetch_floorsheet(stock_id, ticker, date, page)
 
-                if not data or "floorsheets" not in data:
-                    break
+            if not data or "floorsheets" not in data:
+                break
 
-                floorsheet_data = data["floorsheets"]
-                content = floorsheet_data.get("content", [])
+            floorsheet_data = data["floorsheets"]
+            content = floorsheet_data.get("content", [])
 
-                if not content:
-                    break
+            if not content:
+                break
 
-                new, updated, skipped = await self.save_floorsheet_data(content)
-                total_new += new
-                total_updated += updated
-                total_skipped += skipped
+            new, updated, skipped = await self.save_floorsheet_data(content)
+            total_new += new
+            total_updated += updated
+            total_skipped += skipped
 
-                logger.info(
-                    "Floorsheet page processed ticker=%s business_date=%s page=%s new=%s updated=%s skipped=%s",
-                    ticker,
-                    date,
-                    page,
-                    new,
-                    updated,
-                    skipped,
-                )
-
-                if floorsheet_data.get("last", True):
-                    break
-
-                page += 1
-
-            total_saved = total_new + total_updated
             logger.info(
-                "Floorsheet fetch complete ticker=%s business_date=%s new=%s updated=%s skipped=%s",
+                "Floorsheet page processed ticker=%s business_date=%s page=%s new=%s updated=%s skipped=%s",
                 ticker,
                 date,
-                total_new,
-                total_updated,
-                total_skipped,
+                page,
+                new,
+                updated,
+                skipped,
             )
-            return {
-                "ticker": ticker,
-                "date": date,
-                "status": "success",
-                "new": total_new,
-                "updated": total_updated,
-                "saved": total_saved,
-                "skipped": total_skipped
-            }
-        finally:
-            await self.nepse.aclose()
+
+            if floorsheet_data.get("last", True):
+                break
+
+            page += 1
+
+        total_saved = total_new + total_updated
+        logger.info(
+            "Floorsheet fetch complete ticker=%s business_date=%s new=%s updated=%s skipped=%s",
+            ticker,
+            date,
+            total_new,
+            total_updated,
+            total_skipped,
+        )
+        return {
+            "ticker": ticker,
+            "date": date,
+            "status": "success",
+            "new": total_new,
+            "updated": total_updated,
+            "saved": total_saved,
+            "skipped": total_skipped
+        }
 
     async def fetch_from_list(self, fetch_list: list[dict]) -> list[dict]:
         """Fetch floorsheet data for multiple tickers and dates from a list."""
         results = []
 
-        for item in fetch_list:
-            try:
-                fetch_item = FetchListItemSchema(**item)
-                
-                result = await self.fetch_and_save(
-                        fetch_item.ticker,
-                        fetch_item.date,
-                        fetch_item.force
-                    )
-                results.append(result)
-            except Exception as e:
-                logger.exception("Error processing floorsheet fetch item: %s", item)
-                results.append({
-                    "ticker": item.get("ticker"),
-                    "status": "error",
-                    "reason": str(e)
-                })
+        try:
+            for item in fetch_list:
+                try:
+                    fetch_item = FetchListItemSchema(**item)
 
-        return results
+                    result = await self.fetch_and_save(
+                            fetch_item.ticker,
+                            fetch_item.date,
+                            fetch_item.force
+                        )
+                    results.append(result)
+                except Exception as e:
+                    logger.exception("Error processing floorsheet fetch item: %s", item)
+                    results.append({
+                        "ticker": item.get("ticker"),
+                        "status": "error",
+                        "reason": str(e)
+                    })
+
+            return results
+        finally:
+            await self.aclose()
 
 
 async def main():
@@ -376,25 +380,28 @@ async def main():
 
     fetcher = FloorsheetFetcher()
 
-    if args.fetch_list:
-        fetch_list_path = Path(args.fetch_list)
-        if not fetch_list_path.exists():
-            logger.error("Fetch list file not found: %s", args.fetch_list)
-            return
+    try:
+        if args.fetch_list:
+            fetch_list_path = Path(args.fetch_list)
+            if not fetch_list_path.exists():
+                logger.error("Fetch list file not found: %s", args.fetch_list)
+                return
 
-        with open(fetch_list_path, "r") as f:
-            fetch_list = json.load(f)
+            with open(fetch_list_path, "r") as f:
+                fetch_list = json.load(f)
 
-        results = await fetcher.fetch_from_list(fetch_list)
-        for result in results:
+            results = await fetcher.fetch_from_list(fetch_list)
+            for result in results:
+                logger.info("Floorsheet fetch result: %s", result)
+
+        elif args.ticker:
+            result = await fetcher.fetch_and_save(args.ticker, args.date, args.force)
             logger.info("Floorsheet fetch result: %s", result)
 
-    elif args.ticker:
-        result = await fetcher.fetch_and_save(args.ticker, args.date, args.force)
-        logger.info("Floorsheet fetch result: %s", result)
-
-    else:
-        parser.print_help()
+        else:
+            parser.print_help()
+    finally:
+        await fetcher.aclose()
 
 
 if __name__ == "__main__":

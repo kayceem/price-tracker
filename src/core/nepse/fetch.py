@@ -34,31 +34,19 @@ async def fetch_today_price_page(
         )
 
 
-async def fetch_all_script_details(business_date: Optional[str] = None) -> list[dict[str, Any]]:
-    target_date = business_date or datetime.now().strftime("%Y-%m-%d")
-    results: list[dict[str, Any]] = []
-
+async def fetch_all_script_details(
+    business_date: Optional[str] = None,
+    *,
+    only_tickers: set[str] | None = None,
+    include_details: bool = False,
+) -> list[dict[str, Any]]:
     async with NEPSE() as nepse:
-        page = 0
-        while True:
-            logger.debug("Fetching NEPSE today-price page=%s business_date=%s", page, target_date)
-            payload = await nepse.fetch_today_price(
-                business_date=target_date,
-                page=page,
-                size=500,
-            )
-            if not payload:
-                break
+        results = await nepse.fetch_all_today_price(
+            business_date=business_date,
+            only_tickers=only_tickers,
+            include_details=include_details,
+        )
 
-            content = _extract_content(payload)
-            if not content:
-                break
-
-            results.extend(content)
-            if _is_last_page(payload):
-                break
-
-            page += 1
-
+    target_date = business_date or datetime.now().strftime("%Y-%m-%d")
     logger.info("Fetched %s today-price rows for business_date=%s", len(results), target_date)
     return results

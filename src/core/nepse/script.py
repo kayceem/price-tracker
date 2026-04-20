@@ -56,7 +56,10 @@ class ScriptDetailsFetcher:
     """Refresh script details from the NEPSE today-price endpoint."""
 
     async def fetch_and_save(self, only_tickers: set[str] | None = None) -> dict[str, dict]:
-        payloads = await fetch_all_script_details()
+        payloads = await fetch_all_script_details(
+            only_tickers=only_tickers,
+            include_details=only_tickers is not None,
+        )
         if not payloads:
             logger.warning("No NEPSE today-price payloads returned for script detail refresh")
             return {}

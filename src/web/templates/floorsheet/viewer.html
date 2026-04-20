@@ -65,35 +65,35 @@
         <div class="border-b border-gray-200">
             <nav class="flex space-x-8 px-6">
                 <button
-                    @click="activeTab = 'floorsheet'"
+                    @click="setActiveTab('floorsheet')"
                     :class="activeTab === 'floorsheet' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
                     class="py-4 px-1 border-b-2 font-medium text-sm transition"
                 >
                     Floorsheet Data
                 </button>
                 <button
-                    @click="activeTab = 'summary'"
+                    @click="setActiveTab('summary')"
                     :class="activeTab === 'summary' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
                     class="py-4 px-1 border-b-2 font-medium text-sm transition"
                 >
                     Consecutive Buyer Summary
                 </button>
                 <button
-                    @click="activeTab = 'buyer_side'"
+                    @click="setActiveTab('buyer_side')"
                     :class="activeTab === 'buyer_side' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
                     class="py-4 px-1 border-b-2 font-medium text-sm transition"
                 >
                     Buyer Side
                 </button>
                 <button
-                    @click="activeTab = 'seller_side'"
+                    @click="setActiveTab('seller_side')"
                     :class="activeTab === 'seller_side' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
                     class="py-4 px-1 border-b-2 font-medium text-sm transition"
                 >
                     Seller Side
                 </button>
                 <button
-                    @click="activeTab = 'price_switch'"
+                    @click="setActiveTab('price_switch')"
                     :class="activeTab === 'price_switch' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
                     class="py-4 px-1 border-b-2 font-medium text-sm transition"
                 >
@@ -104,19 +104,19 @@
 
         <!-- Floorsheet Data Tab -->
         <div x-show="activeTab === 'floorsheet'" class="p-6">
-            <div x-show="floorsheetData.length === 0" class="text-center py-12 text-gray-500">
+            <div x-show="floorsheetTotalCount === 0" class="text-center py-12 text-gray-500">
                 No floorsheet data available for the selected filters.
             </div>
 
             <!-- Pagination Controls -->
-            <div x-show="floorsheetData.length > 0" class="mb-4 px-6 py-3 bg-gray-50 border-b border-gray-200">
+            <div x-show="floorsheetTotalCount > 0" class="mb-4 px-6 py-3 bg-gray-50 border-b border-gray-200">
                 <div class="flex items-center justify-between">
                     <!-- Items per page selector -->
                     <div class="flex items-center gap-2">
                         <label class="text-sm text-gray-700">Items per page:</label>
                         <select
                             x-model.number="floorsheetItemsPerPage"
-                            @change="floorsheetCurrentPage = 1"
+                            @change="floorsheetCurrentPage = 1; loadFloorsheetData()"
                             class="px-3 py-1 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         >
                             <option value="25">25</option>
@@ -131,13 +131,13 @@
                     <div class="text-sm text-gray-700">
                         Showing <span class="font-semibold" x-text="getFloorsheetPaginationStart()"></span> to
                         <span class="font-semibold" x-text="getFloorsheetPaginationEnd()"></span> of
-                        <span class="font-semibold" x-text="getSortedFloorsheetData().length"></span> records
+                        <span class="font-semibold" x-text="floorsheetTotalCount"></span> records
                     </div>
 
                     <!-- Page navigation -->
                     <div class="flex items-center gap-2">
                         <button
-                            @click="floorsheetCurrentPage--"
+                            @click="if (floorsheetCurrentPage > 1) { floorsheetCurrentPage--; loadFloorsheetData(); }"
                             :disabled="floorsheetCurrentPage === 1"
                             :class="floorsheetCurrentPage === 1 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-200'"
                             class="px-3 py-1 border border-gray-300 rounded-lg text-sm bg-white transition"
@@ -146,12 +146,12 @@
                         </button>
                         <span class="text-sm text-gray-700">
                             Page <span class="font-semibold" x-text="floorsheetCurrentPage"></span> of
-                            <span class="font-semibold" x-text="getFloorsheetTotalPages()"></span>
+                            <span class="font-semibold" x-text="floorsheetTotalPages"></span>
                         </span>
                         <button
-                            @click="floorsheetCurrentPage++"
-                            :disabled="floorsheetCurrentPage >= getFloorsheetTotalPages()"
-                            :class="floorsheetCurrentPage >= getFloorsheetTotalPages() ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-200'"
+                            @click="if (floorsheetCurrentPage < floorsheetTotalPages) { floorsheetCurrentPage++; loadFloorsheetData(); }"
+                            :disabled="floorsheetCurrentPage >= floorsheetTotalPages"
+                            :class="floorsheetCurrentPage >= floorsheetTotalPages ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-200'"
                             class="px-3 py-1 border border-gray-300 rounded-lg text-sm bg-white transition"
                         >
                             Next
@@ -160,7 +160,7 @@
                 </div>
             </div>
 
-            <div x-show="floorsheetData.length > 0" class="overflow-x-auto">
+            <div x-show="floorsheetTotalCount > 0" class="overflow-x-auto">
                 <table class="min-w-full divide-y divide-gray-200">
                     <thead class="bg-gray-50">
                         <tr>
@@ -195,7 +195,7 @@
                         </tr>
                     </thead>
                     <tbody class="bg-white divide-y divide-gray-200">
-                        <template x-for="row in getPaginatedFloorsheetData()" :key="row.contract_id">
+                        <template x-for="row in floorsheetData" :key="row.contract_id">
                             <tr class="hover:bg-gray-50">
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="row.contract_id"></td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="row.buyer_member_id"></td>
@@ -500,6 +500,8 @@ function floorsheetViewer() {
         availableDates: [],
         availableCompanies: [],
         floorsheetData: [],
+        floorsheetTotalCount: 0,
+        floorsheetTotalPages: 1,
         summaryData: [],
         statistics: {
             total_groups: 0,
@@ -529,6 +531,8 @@ function floorsheetViewer() {
             buyer: 0,
             seller: 0
         },
+        buyerSideRows: [],
+        sellerSideRows: [],
 
         // Pagination state
         floorsheetItemsPerPage: 100,
@@ -551,6 +555,7 @@ function floorsheetViewer() {
                 minutes_after_open_detail: ''
             }
         },
+        priceSwitchLoadedKey: '',
 
         // Initialize
         async init() {
@@ -600,16 +605,28 @@ function floorsheetViewer() {
             if (!this.selectedDate) return;
 
             this.loading = true;
+            this.floorsheetCurrentPage = 1;
+            this.priceSwitchLoadedKey = '';
+            this.priceSwitch = {
+                rows: [],
+                levels: { highest: null, second: null, third: null },
+                stats: {
+                    switch_interval: '—',
+                    switch_interval_detail: '',
+                    minutes_after_open: '—',
+                    minutes_after_open_detail: ''
+                }
+            };
 
             try {
                 // Load companies for selected date
                 await this.loadCompanies();
 
-                // Load floorsheet data
-                await this.loadFloorsheetData();
-
-                // Load summary data
-                await this.loadSummaryData();
+                await Promise.all([
+                    this.loadFloorsheetData(),
+                    this.loadSummaryData(),
+                    this.loadBrokerSideData()
+                ]);
             } catch (error) {
                 console.error('Error loading data:', error);
                 alert('Failed to load floorsheet data');
@@ -623,12 +640,16 @@ function floorsheetViewer() {
             const params = new URLSearchParams();
             if (this.selectedDate) params.append('date', this.selectedDate);
             if (this.selectedTicker) params.append('ticker', this.selectedTicker);
+            params.append('page', this.floorsheetCurrentPage);
+            params.append('page_size', this.floorsheetItemsPerPage);
+            params.append('sort_column', this.floorsheetSort.column);
+            params.append('sort_direction', this.floorsheetSort.direction);
 
             const response = await fetch(`/api/floorsheet/data?${params}`);
             const data = await response.json();
             this.floorsheetData = data.floorsheet || [];
-            this.computeBrokerSides();
-            await this.loadPriceSwitchData();
+            this.floorsheetTotalCount = data.total || 0;
+            this.floorsheetTotalPages = data.total_pages || 1;
         },
 
         // Load summary data
@@ -654,7 +675,22 @@ function floorsheetViewer() {
             }));
         },
 
+        async loadBrokerSideData() {
+            const params = new URLSearchParams({ date: this.selectedDate });
+            if (this.selectedTicker) params.append('ticker', this.selectedTicker);
+
+            const response = await fetch(`/api/floorsheet/broker-sides?${params}`);
+            const data = await response.json();
+            this.buyerSideRows = data.buyer || [];
+            this.sellerSideRows = data.seller || [];
+            this.brokerSideTotals = data.totals || { buyer: 0, seller: 0 };
+        },
+
         async loadPriceSwitchData() {
+            const currentKey = `${this.selectedDate || ''}:${this.selectedTicker || ''}`;
+            if (this.priceSwitchLoadedKey === currentKey) {
+                return;
+            }
             const params = new URLSearchParams({ date: this.selectedDate });
             if (this.selectedTicker) params.append('ticker', this.selectedTicker);
             const response = await fetch(`/api/floorsheet/price-switch?${params}`);
@@ -669,6 +705,14 @@ function floorsheetViewer() {
                     minutes_after_open_detail: ''
                 }
             };
+            this.priceSwitchLoadedKey = currentKey;
+        },
+
+        async setActiveTab(tab) {
+            this.activeTab = tab;
+            if (tab === 'price_switch' && this.selectedDate) {
+                await this.loadPriceSwitchData();
+            }
         },
 
         // Sort floorsheet data
@@ -679,6 +723,8 @@ function floorsheetViewer() {
                 this.floorsheetSort.column = column;
                 this.floorsheetSort.direction = 'asc';
             }
+            this.floorsheetCurrentPage = 1;
+            this.loadFloorsheetData();
         },
 
         // Sort summary data
@@ -690,26 +736,6 @@ function floorsheetViewer() {
                 // Default sort direction: ascending for time, descending for numbers
                 this.summarySort.direction = column === 'start_time' ? 'asc' : 'desc';
             }
-        },
-
-        // Get sorted floorsheet data
-        getSortedFloorsheetData() {
-            const { column, direction } = this.floorsheetSort;
-            const sorted = [...this.floorsheetData].sort((a, b) => {
-                let aVal = a[column];
-                let bVal = b[column];
-
-                // Handle numeric columns
-                if (['contract_quantity', 'contract_rate', 'contract_amount', 'contract_id'].includes(column)) {
-                    aVal = parseFloat(aVal) || 0;
-                    bVal = parseFloat(bVal) || 0;
-                }
-
-                if (aVal < bVal) return direction === 'asc' ? -1 : 1;
-                if (aVal > bVal) return direction === 'asc' ? 1 : -1;
-                return 0;
-            });
-            return sorted;
         },
 
         // Get sorted summary data
@@ -774,25 +800,14 @@ function floorsheetViewer() {
             return styles[accent] || 'bg-gray-100 text-gray-700';
         },
 
-        // Floorsheet pagination methods
-        getPaginatedFloorsheetData() {
-            const sorted = this.getSortedFloorsheetData();
-            const start = (this.floorsheetCurrentPage - 1) * this.floorsheetItemsPerPage;
-            const end = start + this.floorsheetItemsPerPage;
-            return sorted.slice(start, end);
-        },
-
-        getFloorsheetTotalPages() {
-            return Math.ceil(this.getSortedFloorsheetData().length / this.floorsheetItemsPerPage) || 1;
-        },
-
         getFloorsheetPaginationStart() {
+            if (this.floorsheetTotalCount === 0) return 0;
             return ((this.floorsheetCurrentPage - 1) * this.floorsheetItemsPerPage) + 1;
         },
 
         getFloorsheetPaginationEnd() {
             const end = this.floorsheetCurrentPage * this.floorsheetItemsPerPage;
-            return Math.min(end, this.getSortedFloorsheetData().length);
+            return Math.min(end, this.floorsheetTotalCount);
         },
 
         // Summary pagination methods
@@ -816,49 +831,6 @@ function floorsheetViewer() {
             return Math.min(end, this.getSortedSummaryData().length);
         },
 
-        // --- Broker Side (Buyer / Seller) aggregation ---
-        computeBrokerSides() {
-            const buyerAgg = {};
-            const sellerAgg = {};
-            let buyerTotalQty = 0;
-            let sellerTotalQty = 0;
-
-            for (const row of this.floorsheetData) {
-                const qty = parseFloat(row.contract_quantity) || 0;
-                const amt = parseFloat(row.contract_amount) || 0;
-
-                const bId = row.buyer_member_id;
-                if (bId) {
-                    if (!buyerAgg[bId]) {
-                        buyerAgg[bId] = { broker_id: bId, broker_name: row.buyer_broker_name, quantity: 0, total_amount: 0 };
-                    }
-                    buyerAgg[bId].quantity += qty;
-                    buyerAgg[bId].total_amount += amt;
-                    buyerTotalQty += qty;
-                }
-
-                const sId = row.seller_member_id;
-                if (sId) {
-                    if (!sellerAgg[sId]) {
-                        sellerAgg[sId] = { broker_id: sId, broker_name: row.seller_broker_name, quantity: 0, total_amount: 0 };
-                    }
-                    sellerAgg[sId].quantity += qty;
-                    sellerAgg[sId].total_amount += amt;
-                    sellerTotalQty += qty;
-                }
-            }
-
-            const finalize = (agg, total) => Object.values(agg).map(b => ({
-                ...b,
-                average_price: b.quantity > 0 ? b.total_amount / b.quantity : 0,
-                percentage: total > 0 ? (b.quantity / total) * 100 : 0
-            }));
-
-            this._buyerSideAll = finalize(buyerAgg, buyerTotalQty);
-            this._sellerSideAll = finalize(sellerAgg, sellerTotalQty);
-            this.brokerSideTotals = { buyer: buyerTotalQty, seller: sellerTotalQty };
-        },
-
         sortBrokerSide(side, column) {
             const sortState = side === 'buyer' ? this.buyerSideSort : this.sellerSideSort;
             if (sortState.column === column) {
@@ -870,15 +842,13 @@ function floorsheetViewer() {
         },
 
         getBrokerSideRows(side) {
-            const all = side === 'buyer' ? (this._buyerSideAll || []) : (this._sellerSideAll || []);
-            // First pick top 10 by quantity (the "top brokers" definition is by quantity)
-            const top = [...all].sort((a, b) => b.quantity - a.quantity).slice(0, 10);
-            // Then apply user-selected sort within that set
+            const rows = side === 'buyer' ? this.buyerSideRows : this.sellerSideRows;
+            const top = [...rows].sort((a, b) => (parseFloat(b.quantity) || 0) - (parseFloat(a.quantity) || 0)).slice(0, 10);
             const sortState = side === 'buyer' ? this.buyerSideSort : this.sellerSideSort;
             const { column, direction } = sortState;
             return top.sort((a, b) => {
-                const av = parseFloat(a[column]) || 0;
-                const bv = parseFloat(b[column]) || 0;
+                const av = column === 'broker_id' ? (a[column] || '') : (parseFloat(a[column]) || 0);
+                const bv = column === 'broker_id' ? (b[column] || '') : (parseFloat(b[column]) || 0);
                 if (av < bv) return direction === 'asc' ? -1 : 1;
                 if (av > bv) return direction === 'asc' ? 1 : -1;
                 return 0;
